@@ -1,6 +1,6 @@
 [Project]
 logging_level = debug
-mqtt_broker = host.docker.internal
+mqtt_broker = localhost
 mqtt_port = 1883
 queue_size = 300
 fps = 30

@@ -49,12 +49,12 @@ class TrackNetManager:
                 self.tracknetThread \
                     = TrackNetMqtt(f"TrackNet_{cam_idx}", self.mqttc, tracknet_topic, camera_origin_size[0],
                                    camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, False)
+                                   self.imageBuffer, True)
             elif tracknet_ver == "tracknet_1000":
                 self.tracknetThread \
                     = TrackNet1000Mqtt(f"TrackNet_{cam_idx}", self.mqttc, tracknet_topic, camera_origin_size[0],
                                    camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, False)
+                                   self.imageBuffer, True)
             else:
                 raise Exception(f"tracknet_ver={tracknet_ver} is not acceptable.")
             self.tracknetThread.start()

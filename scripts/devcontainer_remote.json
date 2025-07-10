@@ -30,5 +30,6 @@
 	"forwardPorts": [
 		5901,
 		6080
-	]
+	],
+	"postStartCommand": "nohup bash -c 'mosquitto &' > /tmp/nohup.out 2>&1"
 }
