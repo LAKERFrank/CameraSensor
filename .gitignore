@@ -1,3 +1,9 @@
+/replay
+/replay_mqtt
+/NOL_Playground
+__pycache__
+/log
+/.devcontainer/
 
 # weights
 *tar
