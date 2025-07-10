@@ -1,0 +1,6 @@
+log/
+replay/
+snapshot/
+*__pycache__
+NiceShot/
+Reader/Image_Source/intrinsic_data/**/frames_*/
