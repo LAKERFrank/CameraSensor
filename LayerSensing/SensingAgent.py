@@ -5,7 +5,7 @@ from lib.MqttAgent import MqttAgent
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer
 from LayerSensing.TrackNetManager import TrackNetManager
 from LayerSensing.PoseManager import PoseManager
-from LayerSensing.BufferDistributor import BufferDistributor
+from LayerSensing.FrameDistributor import FrameDistributor
 
 class SensingLayerAgent(MqttAgent):
     def __init__(self, device_name:str, imgbuf: ImageBuffer):
@@ -15,8 +15,12 @@ class SensingLayerAgent(MqttAgent):
         self._src_buf = imgbuf
         self._tracknet_buf = ImageBuffer()
         self._pose_buf = ImageBuffer()
-        self._distributor = BufferDistributor(self._src_buf,
-                                              [self._tracknet_buf, self._pose_buf])
+        # distribute frames from the camera to TrackNet and Pose
+        # Pose only receives every 4th frame
+        self._distributor = FrameDistributor(self._src_buf,
+                                             self._tracknet_buf,
+                                             self._pose_buf,
+                                             pose_interval=4)
 
         self.tracknetManager = TrackNetManager(device_name, self.mqttc, self._tracknet_buf)
         self.poseManager = PoseManager(device_name, self.mqttc, self._pose_buf)
