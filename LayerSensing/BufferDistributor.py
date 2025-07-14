@@ -1,10 +1,11 @@
 import threading
 import time
+from typing import List
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
 
 class BufferDistributor(threading.Thread):
     """Duplicate frames from a source ImageBuffer to multiple destination ImageBuffers."""
-    def __init__(self, src_buf: ImageBuffer, dst_bufs: list[ImageBuffer]):
+    def __init__(self, src_buf: ImageBuffer, dst_bufs: List[ImageBuffer]):
         super().__init__()
         self.src_buf = src_buf
         self.dst_bufs = dst_bufs
