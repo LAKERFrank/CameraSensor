@@ -47,7 +47,11 @@ class YOLOPoseMqtt(threading.Thread):
             frame = self.image_buffer.pop(True)
             if frame.is_eos:
                 break
-            results = self.model(frame.image, verbose=False)
+            img = frame.image
+            # some pretrained weights expect 3-channel images, convert if needed
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            results = self.model(img, verbose=False)
             points = []
             for r in results:
                 if r.keypoints is None:
