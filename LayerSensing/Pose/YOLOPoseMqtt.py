@@ -33,6 +33,7 @@ class YOLOPoseMqtt(threading.Thread):
             self.expected_ch = m.conv.in_channels if hasattr(m, 'conv') else getattr(m, 'in_channels', 3)
         except Exception:
             self.expected_ch = 3
+        logging.info(f"{self.nodename} expected_ch={self.expected_ch}")
         # warmup with one-frame input matching expected channels
         self.model.predictor.model.warmup(imgsz=(1, self.expected_ch, 640, 640))
         self.model.predictor.done_warmup = True
