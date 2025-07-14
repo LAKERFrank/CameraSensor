@@ -243,7 +243,8 @@ class BasePredictor:
 
         # Warmup model
         if not self.done_warmup:
-            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 10, *self.imgsz))
+            # warmup with a single-channel dummy input to support grayscale models
+            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 1, *self.imgsz))
             self.done_warmup = True
         dataloader = DataLoader(
             self.dataset,
@@ -330,7 +331,8 @@ class BasePredictor:
             (self.save_dir / 'labels' if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
 
         if not self.done_warmup:
-            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 10, *self.imgsz))
+            # warmup with a single-channel dummy input to support grayscale models
+            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 1, *self.imgsz))
             self.done_warmup = True
 
         start_time = time.time()
@@ -473,7 +475,8 @@ class BasePredictor:
             (self.save_dir / 'labels' if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
 
         if not self.done_warmup:
-            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 10, *self.imgsz))
+            # warmup with a single-channel dummy input to support grayscale models
+            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 1, *self.imgsz))
             self.done_warmup = True
         start_time = time.time()
         dataloader = DataLoader(
@@ -612,7 +615,8 @@ class BasePredictor:
             (self.save_dir / 'labels' if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
 
         if not self.done_warmup:
-            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 10, *self.imgsz))
+            # warmup with a single-channel dummy input to support grayscale models
+            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 1, *self.imgsz))
             self.done_warmup = True
         start_time = time.time()
         dataloader = DataLoader(
@@ -751,7 +755,8 @@ class BasePredictor:
             (self.save_dir / 'labels' if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
 
         if not self.done_warmup:
-            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 10, *self.imgsz))
+            # warmup with a single-channel dummy input to support grayscale models
+            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 1, *self.imgsz))
             self.done_warmup = True
 
         dataloader = DataLoader(
@@ -913,7 +918,8 @@ class BasePredictor:
             (self.save_dir / 'labels' if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
 
         if not self.done_warmup:
-            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 10, *self.imgsz))
+            # warmup with a single-channel dummy input to support grayscale models
+            self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 1, *self.imgsz))
             self.done_warmup = True
 
         dataloader = DataLoader(
