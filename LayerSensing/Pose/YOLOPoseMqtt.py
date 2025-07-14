@@ -61,10 +61,15 @@ class YOLOPoseMqtt(threading.Thread):
             if frame.is_eos:
                 break
             img = frame.image
-            if self.expected_ch == 3 and img.ndim == 2:
-                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-            elif self.expected_ch == 1 and img.ndim == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            # ensure shape matches model expectation
+            if self.expected_ch == 3:
+                if img.ndim == 2:
+                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif self.expected_ch == 1:
+                if img.ndim == 3 and img.shape[2] == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                if img.ndim == 2:
+                    img = img[..., None]  # expand to (H, W, 1) for predictor
             results = self.model(img, verbose=False)
             points = []
             for r in results:
