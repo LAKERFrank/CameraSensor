@@ -6,6 +6,7 @@ import logging
 import cv2
 import paho.mqtt.client as mqtt
 from ultralytics import YOLO
+from ultralytics.yolo.v8.pose.predict import PosePredictor
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
 from lib.writer import CSVWriter
@@ -23,6 +24,23 @@ class YOLOPoseMqtt(threading.Thread):
         self.image_buffer = image_buffer
         weight_path = os.path.join(ROOTDIR, 'weights', weights_filename)
         self.model = YOLO(weight_path)
+        # initialize predictor manually so we can warm up with the correct channel count
+        self.model.predictor = PosePredictor()
+        self.model.predictor.setup_model(model=self.model.model, verbose=False)
+        # determine expected input channels from model's first layer
+        try:
+            first = self.model.predictor.model.model[0]
+            if hasattr(first, 'conv'):
+                self.expected_ch = first.conv.in_channels
+            elif hasattr(first, 'cv1'):
+                self.expected_ch = first.cv1.conv.in_channels
+            else:
+                self.expected_ch = 3
+        except Exception:
+            self.expected_ch = 3
+        # warmup with one-frame input matching expected channels
+        self.model.predictor.model.warmup(imgsz=(1, self.expected_ch, 640, 640))
+        self.model.predictor.done_warmup = True
         if save_csv:
             os.makedirs(path, exist_ok=True)
             csv_path = os.path.join(path, f"{self.nodename}.csv")
@@ -48,9 +66,10 @@ class YOLOPoseMqtt(threading.Thread):
             if frame.is_eos:
                 break
             img = frame.image
-            # some pretrained weights expect 3-channel images, convert if needed
-            if img.ndim == 2:
+            if self.expected_ch == 3 and img.ndim == 2:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif self.expected_ch == 1 and img.ndim == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             results = self.model(img, verbose=False)
             points = []
             for r in results:
