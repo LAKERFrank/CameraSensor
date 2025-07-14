@@ -40,3 +40,16 @@ class RpcSensing(RemoteProcedureCall):
 
     def stopDatafeeder(self):
         return self._call_rpc_sync("TrackNet/stopDatafeeder")
+
+    def startPose(self, weights_filename: str, replay_dirname: str, cam_idx: int):
+        """Start Pose thread"""
+        return self._call_rpc_sync(
+            "Pose/start",
+            weights_filename=weights_filename,
+            replay_dirname=replay_dirname,
+            cam_idx=cam_idx,
+        )
+
+    def stopPose(self):
+        """Stop Pose thread"""
+        return self._call_rpc_sync("Pose/stop", timeout=1000)
