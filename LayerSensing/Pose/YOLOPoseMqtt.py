@@ -27,8 +27,12 @@ class YOLOPoseMqtt(threading.Thread):
         # initialize predictor manually so we can warm up with the correct channel count
         self.model.predictor = PosePredictor()
         self.model.predictor.setup_model(model=self.model.model, verbose=False)
-        # determine expected input channels from model yaml
-        self.expected_ch = getattr(getattr(self.model, 'model', None), 'yaml', {}).get('ch', 3)
+        # determine expected input channels from first layer weights
+        try:
+            m = self.model.model.model[0]
+            self.expected_ch = m.conv.in_channels if hasattr(m, 'conv') else getattr(m, 'in_channels', 3)
+        except Exception:
+            self.expected_ch = 3
         # warmup with one-frame input matching expected channels
         self.model.predictor.model.warmup(imgsz=(1, self.expected_ch, 640, 640))
         self.model.predictor.done_warmup = True
