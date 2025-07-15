@@ -15,6 +15,7 @@ import numpy as np
 import requests
 import torch
 from PIL import Image
+from torch.utils.data import IterableDataset
 
 from ultralytics.tracknet.utils.resize import resize_and_pad
 from ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
@@ -30,7 +31,7 @@ class SourceTypes:
     tensor: bool = False
 
 
-class LoadStreams:
+class LoadStreams(IterableDataset):
     """YOLOv8 streamloader, i.e. `yolo predict source='rtsp://example.com/media.mp4'  # RTSP, RTMP, HTTP streams`."""
 
     def __init__(self, sources='file.streams', imgsz=640, vid_stride=1):
@@ -117,8 +118,13 @@ class LoadStreams:
         """Return the length of the sources object."""
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
-class LoadScreenshots:
+
+class LoadScreenshots(IterableDataset):
     """YOLOv8 screenshot dataloader, i.e. `yolo predict source=screen`."""
 
     def __init__(self, source, imgsz=640):
@@ -160,8 +166,13 @@ class LoadScreenshots:
         self.frame += 1
         return str(self.screen), im0, None, s  # screen, img, original img, im0s, s
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
-class LoadImages:
+
+class LoadImages(IterableDataset):
     """YOLOv8 image/video dataloader, i.e. `yolo predict source=image.jpg/vid.mp4`."""
 
     def __init__(self, path, imgsz=640, vid_stride=1, batch_size=10):
@@ -291,9 +302,14 @@ class LoadImages:
         """Returns the number of files in the object."""
         return self.nf // self.batch_size  # Adjust length to reflect batch processing
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
 
-class LoadPilAndNumpy:
+
+class LoadPilAndNumpy(IterableDataset):
 
     def __init__(self, im0, imgsz=640):
         """Initialize PIL and Numpy Dataloader."""
@@ -321,6 +337,11 @@ class LoadPilAndNumpy:
         """Returns the length of the 'im0' attribute."""
         return len(self.im0)
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
+
     def __next__(self):
         """Returns batch paths, images, processed images, None, ''."""
         if self.count == 1:  # loop only once as it's batch inference
@@ -334,7 +355,7 @@ class LoadPilAndNumpy:
         return self
 
 
-class LoadTensor:
+class LoadTensor(IterableDataset):
 
     def __init__(self, im0) -> None:
         self.im0 = self._single_check(im0)
@@ -377,6 +398,11 @@ class LoadTensor:
     def __len__(self):
         """Returns the batch size."""
         return self.bs
+
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
 
 def autocast_list(source):

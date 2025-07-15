@@ -3,10 +3,11 @@ import os
 from pathlib import Path
 
 import cv2
+from torch.utils.data import IterableDataset
 
 from ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
 
-class LoadImages:
+class LoadImages(IterableDataset):
     """YOLOv8 image/video dataloader, i.e. `yolo predict source=image.jpg/vid.mp4`."""
 
     def __init__(self, path, imgsz=640, vid_stride=1):
@@ -108,4 +109,9 @@ class LoadImages:
     def __len__(self):
         """Returns the number of files in the object."""
         return self.nf  # number of files
+
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
