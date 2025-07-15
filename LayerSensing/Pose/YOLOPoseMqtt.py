@@ -6,6 +6,7 @@ import logging
 import cv2
 import paho.mqtt.client as mqtt
 from ultralytics import YOLO
+from ultralytics.yolo.v8.pose.predict import PosePredictor
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
 from lib.writer import CSVWriter
@@ -23,6 +24,41 @@ class YOLOPoseMqtt(threading.Thread):
         self.image_buffer = image_buffer
         weight_path = os.path.join(ROOTDIR, 'weights', weights_filename)
         self.model = YOLO(weight_path)
+        # initialize predictor manually so we can warm up with the correct channel count
+        self.model.predictor = PosePredictor()
+        self.model.predictor.setup_model(model=self.model.model, verbose=False)
+        # adjust head parameters from last conv weight if mismatch
+        try:
+            head = self.model.model.model[-1]
+            conv_out = head.cv2[0][-1]
+            cls_out = head.cv3[0][-1]
+            bbox_ch = conv_out.weight.shape[0]
+            cls_ch = cls_out.weight.shape[0]
+            groups = cls_ch // head.nc if cls_ch % head.nc == 0 else getattr(head, 'num_groups', 1)
+            per_group = bbox_ch // groups if groups else bbox_ch
+            feat_no = per_group // head.reg_max if head.reg_max else per_group
+            if hasattr(head, 'num_groups') and head.num_groups != groups:
+                head.num_groups = groups
+            if hasattr(head, 'feat_no') and head.feat_no != feat_no:
+                head.feat_no = feat_no
+            if head.no != head.nc + head.reg_max * feat_no:
+                head.no = head.nc + head.reg_max * feat_no
+            # use standard detect forward when weights output a single bbox set
+            if groups == 1 and feat_no == 4:
+                from ultralytics.nn.modules.head import DetectV1
+                head.detect = DetectV1.forward
+        except Exception as e:
+            logging.warning(f"{self.nodename} failed to adjust head params: {e}")
+        # determine expected input channels from first layer weights
+        try:
+            m = self.model.model.model[0]
+            self.expected_ch = m.conv.in_channels if hasattr(m, 'conv') else getattr(m, 'in_channels', 3)
+        except Exception:
+            self.expected_ch = 3
+        logging.info(f"{self.nodename} expected_ch={self.expected_ch}")
+        # warmup with one-frame input matching expected channels
+        self.model.predictor.model.warmup(imgsz=(1, self.expected_ch, 640, 640))
+        self.model.predictor.done_warmup = True
         if save_csv:
             os.makedirs(path, exist_ok=True)
             csv_path = os.path.join(path, f"{self.nodename}.csv")
@@ -47,7 +83,17 @@ class YOLOPoseMqtt(threading.Thread):
             frame = self.image_buffer.pop(True)
             if frame.is_eos:
                 break
-            results = self.model(frame.image, verbose=False)
+            img = frame.image
+            # ensure shape matches model expectation
+            if self.expected_ch == 3:
+                if img.ndim == 2:
+                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif self.expected_ch == 1:
+                if img.ndim == 3 and img.shape[2] == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                if img.ndim == 2:
+                    img = img[..., None]  # expand to (H, W, 1) for predictor
+            results = self.model(img, verbose=False)
             points = []
             for r in results:
                 if r.keypoints is None:
