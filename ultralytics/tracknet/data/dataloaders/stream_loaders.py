@@ -3,10 +3,11 @@ import os
 from pathlib import Path
 
 import cv2
+from torch.utils.data import IterableDataset
 
 from ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
 
-class LoadImages:
+class LoadImages(IterableDataset):
     """YOLOv8 image/video dataloader, i.e. `yolo predict source=image.jpg/vid.mp4`."""
 
     def __init__(self, path, imgsz=640, vid_stride=1):

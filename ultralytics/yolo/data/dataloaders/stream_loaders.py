@@ -15,6 +15,7 @@ import numpy as np
 import requests
 import torch
 from PIL import Image
+from torch.utils.data import IterableDataset
 
 from ultralytics.tracknet.utils.resize import resize_and_pad
 from ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
@@ -30,7 +31,7 @@ class SourceTypes:
     tensor: bool = False
 
 
-class LoadStreams:
+class LoadStreams(IterableDataset):
     """YOLOv8 streamloader, i.e. `yolo predict source='rtsp://example.com/media.mp4'  # RTSP, RTMP, HTTP streams`."""
 
     def __init__(self, sources='file.streams', imgsz=640, vid_stride=1):
@@ -118,7 +119,7 @@ class LoadStreams:
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
 
-class LoadScreenshots:
+class LoadScreenshots(IterableDataset):
     """YOLOv8 screenshot dataloader, i.e. `yolo predict source=screen`."""
 
     def __init__(self, source, imgsz=640):
@@ -161,7 +162,7 @@ class LoadScreenshots:
         return str(self.screen), im0, None, s  # screen, img, original img, im0s, s
 
 
-class LoadImages:
+class LoadImages(IterableDataset):
     """YOLOv8 image/video dataloader, i.e. `yolo predict source=image.jpg/vid.mp4`."""
 
     def __init__(self, path, imgsz=640, vid_stride=1, batch_size=10):
@@ -293,7 +294,7 @@ class LoadImages:
 
 
 
-class LoadPilAndNumpy:
+class LoadPilAndNumpy(IterableDataset):
 
     def __init__(self, im0, imgsz=640):
         """Initialize PIL and Numpy Dataloader."""
@@ -334,7 +335,7 @@ class LoadPilAndNumpy:
         return self
 
 
-class LoadTensor:
+class LoadTensor(IterableDataset):
 
     def __init__(self, im0) -> None:
         self.im0 = self._single_check(im0)
