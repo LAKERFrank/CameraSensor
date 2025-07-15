@@ -110,3 +110,8 @@ class LoadImages(IterableDataset):
         """Returns the number of files in the object."""
         return self.nf  # number of files
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
+

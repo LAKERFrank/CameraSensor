@@ -118,6 +118,11 @@ class LoadStreams(IterableDataset):
         """Return the length of the sources object."""
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
+
 
 class LoadScreenshots(IterableDataset):
     """YOLOv8 screenshot dataloader, i.e. `yolo predict source=screen`."""
@@ -160,6 +165,11 @@ class LoadScreenshots(IterableDataset):
 
         self.frame += 1
         return str(self.screen), im0, None, s  # screen, img, original img, im0s, s
+
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
 
 class LoadImages(IterableDataset):
@@ -292,6 +302,11 @@ class LoadImages(IterableDataset):
         """Returns the number of files in the object."""
         return self.nf // self.batch_size  # Adjust length to reflect batch processing
 
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
+
 
 
 class LoadPilAndNumpy(IterableDataset):
@@ -321,6 +336,11 @@ class LoadPilAndNumpy(IterableDataset):
     def __len__(self):
         """Returns the length of the 'im0' attribute."""
         return len(self.im0)
+
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
     def __next__(self):
         """Returns batch paths, images, processed images, None, ''."""
@@ -378,6 +398,11 @@ class LoadTensor(IterableDataset):
     def __len__(self):
         """Returns the batch size."""
         return self.bs
+
+    @staticmethod
+    def collate_fn(batch):
+        """Return batch items without further collation."""
+        return batch[0]
 
 
 def autocast_list(source):
