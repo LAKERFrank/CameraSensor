@@ -258,7 +258,11 @@ class BasePredictor:
         for batch in dataloader:
             self.run_callbacks('on_predict_batch_start')
             self.batch = batch
-            path, im0s, vid_cap, s, fids, timestamps = batch
+            path, im0s, vid_cap, s, *meta = batch
+            if len(meta) == 2:
+                fids, timestamps = meta
+            else:
+                fids, timestamps = None, None
 
             # Preprocess
             with profilers[0]:
@@ -270,7 +274,10 @@ class BasePredictor:
 
             # Postprocess
             with profilers[2]:
-                self.results = self.postprocess(preds, im, im0s, fids, timestamps)
+                if fids is None:
+                    self.results = self.postprocess(preds, im, im0s)
+                else:
+                    self.results = self.postprocess(preds, im, im0s, fids, timestamps)
             self.run_callbacks('on_predict_postprocess_end')
 
             # Visualize, save, write results
@@ -800,7 +807,11 @@ class BasePredictor:
                 while not queue.empty() and stream_count < max_pending_batches:
                     i, batch = queue.get_nowait()
                     self.batch = batch
-                    path, im0s, vid_cap, s, fids, timestamps = batch
+                    path, im0s, vid_cap, s, *meta = batch
+                    if len(meta) == 2:
+                        fids, timestamps = meta
+                    else:
+                        fids, timestamps = None, None
                     stream_idx = i % num_streams
                     stream = streams[stream_idx]
 
@@ -823,7 +834,10 @@ class BasePredictor:
                         infer_end.record()
 
                         post_start.record()
-                        results = self.postprocess(preds, im, im0s, fids, timestamps)
+                        if fids is None:
+                            results = self.postprocess(preds, im, im0s)
+                        else:
+                            results = self.postprocess(preds, im, im0s, fids, timestamps)
                         post_end.record()
 
                         end_event.record()
