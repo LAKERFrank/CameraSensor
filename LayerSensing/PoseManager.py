@@ -12,7 +12,8 @@ class PoseManager:
         self.imageBuffer = imgbuf
         self.poseThread = None
 
-    def startPose(self, weights_filename: str, replay_dirname: str, cam_idx: int):
+    def startPose(self, weights_filename: str, replay_dirname: str, cam_idx: int,
+                  visualize: bool = False):
         try:
             if self.poseThread is not None:
                 raise Exception("There is another pose thread running.")
@@ -23,7 +24,7 @@ class PoseManager:
 
             self.poseThread = YOLOPoseMqtt(
                 f"Pose_{cam_idx}", self.mqttc, pose_topic, replay_path,
-                weights_filename, self.imageBuffer, True)
+                weights_filename, self.imageBuffer, True, visualize)
             self.poseThread.start()
             return {"status": "ready"}
         except Exception as e:

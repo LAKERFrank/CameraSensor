@@ -9,19 +9,20 @@ from ultralytics import YOLO
 from ultralytics.yolo.v8.pose.predict import PosePredictor
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
-from lib.writer import CSVWriter
+from lib.writer import PoseCSVWriter
 from lib.point import Point
 from lib.common import ROOTDIR
 
 class YOLOPoseMqtt(threading.Thread):
     def __init__(self, nodename: str, mqttc: mqtt.Client, output_topic: str,
                  path: str, weights_filename: str, image_buffer: ImageBuffer,
-                 save_csv: bool = True):
+                 save_csv: bool = True, visualize: bool = False):
         super().__init__()
         self.nodename = nodename
         self.mqttc = mqttc
         self.output_topic = output_topic
         self.image_buffer = image_buffer
+        self.visualize = visualize
         weight_path = os.path.join(ROOTDIR, 'weights', weights_filename)
         self.model = YOLO(weight_path)
         # initialize predictor manually so we can warm up with the correct channel count
@@ -62,9 +63,14 @@ class YOLOPoseMqtt(threading.Thread):
         if save_csv:
             os.makedirs(path, exist_ok=True)
             csv_path = os.path.join(path, f"{self.nodename}.csv")
-            self.csv_writer = CSVWriter(name=self.nodename, filename=csv_path)
+            self.csv_writer = PoseCSVWriter(csv_path)
         else:
             self.csv_writer = None
+        if visualize:
+            self.image_dir = os.path.join(path, "images")
+            os.makedirs(self.image_dir, exist_ok=True)
+        else:
+            self.image_dir = None
         self._stopper = threading.Event()
 
     def stop(self):
@@ -96,15 +102,25 @@ class YOLOPoseMqtt(threading.Thread):
             results = self.model(img, verbose=False)
             points = []
             for r in results:
-                if r.keypoints is None:
+                if r.keypoints is None or r.boxes is None:
                     continue
-                # take first keypoint of first detection as example
-                kp = r.keypoints.xy[0][0]
-                p = Point(fid=frame.index, timestamp=frame.monotonic_timestamp,
-                           visibility=1, x=float(kp[0]), y=float(kp[1]), z=0, event=0)
-                points.append(p)
-                if self.csv_writer:
-                    self.csv_writer.writePoints(p)
+                bboxes = r.boxes.xyxy.cpu().tolist()
+                kpts = r.keypoints.xy.cpu().tolist()
+                for bbox, kpt in zip(bboxes, kpts):
+                    # save first keypoint as Point for mqtt publish
+                    if kpt:
+                        kp0 = kpt[0]
+                        p = Point(fid=frame.index, timestamp=frame.monotonic_timestamp,
+                                   visibility=1, x=float(kp0[0]), y=float(kp0[1]), z=0, event=0)
+                        points.append(p)
+                    if self.csv_writer:
+                        kps = [[float(pt[0]), float(pt[1])] for pt in kpt]
+                        self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
+                                                  kps, frame.monotonic_timestamp)
+            if self.image_dir and results:
+                plotted = results[0].plot()
+                img_path = os.path.join(self.image_dir, f"{frame.index:06d}.jpg")
+                cv2.imwrite(img_path, plotted)
             if points and self.mqttc is not None:
                 self._publish(points)
         if self.csv_writer:
