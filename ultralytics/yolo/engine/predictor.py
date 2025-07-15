@@ -251,6 +251,7 @@ class BasePredictor:
             shuffle=False,
             num_workers=0,
             pin_memory=True,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         self.seen, self.windows, self.batch, profilers = 0, [], None, (ops.Profile(), ops.Profile(), ops.Profile())
         self.run_callbacks('on_predict_start')
@@ -341,6 +342,7 @@ class BasePredictor:
             num_workers=8,
             pin_memory=True,
             prefetch_factor=8,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         num_streams = 10
         streams = [torch.cuda.Stream() for _ in range(num_streams)]
@@ -483,6 +485,7 @@ class BasePredictor:
             num_workers=8,
             pin_memory=True,
             prefetch_factor=8,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         num_streams = 10
         streams = [torch.cuda.Stream() for _ in range(num_streams)]
@@ -622,6 +625,7 @@ class BasePredictor:
             num_workers=16,
             pin_memory=True,
             prefetch_factor=16,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         preprocess_num_streams = 2
         inference_num_streams = 1
@@ -762,6 +766,7 @@ class BasePredictor:
             pin_memory=True,
             prefetch_factor=None,
             persistent_workers=False,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
 
         num_streams = 6
@@ -924,6 +929,7 @@ class BasePredictor:
             pin_memory=True,
             prefetch_factor=2,
             persistent_workers=True,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
 
         num_streams = 6
