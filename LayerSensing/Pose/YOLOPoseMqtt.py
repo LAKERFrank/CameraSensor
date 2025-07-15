@@ -31,15 +31,22 @@ class YOLOPoseMqtt(threading.Thread):
         try:
             head = self.model.model.model[-1]
             conv_out = head.cv2[0][-1]
-            oc = conv_out.weight.shape[0]
-            num_groups = getattr(head, 'num_groups', 1)
-            feat_no = getattr(head, 'feat_no', oc // (head.reg_max * num_groups))
-            derived_reg_max = oc // (feat_no * num_groups)
-            if derived_reg_max != head.reg_max or feat_no != getattr(head, 'feat_no', feat_no):
-                head.reg_max = derived_reg_max
-                if hasattr(head, 'feat_no'):
-                    head.feat_no = feat_no
-                head.no = head.nc + head.reg_max * getattr(head, 'feat_no', feat_no)
+            cls_out = head.cv3[0][-1]
+            bbox_ch = conv_out.weight.shape[0]
+            cls_ch = cls_out.weight.shape[0]
+            groups = cls_ch // head.nc if cls_ch % head.nc == 0 else getattr(head, 'num_groups', 1)
+            per_group = bbox_ch // groups if groups else bbox_ch
+            feat_no = per_group // head.reg_max if head.reg_max else per_group
+            if hasattr(head, 'num_groups') and head.num_groups != groups:
+                head.num_groups = groups
+            if hasattr(head, 'feat_no') and head.feat_no != feat_no:
+                head.feat_no = feat_no
+            if head.no != head.nc + head.reg_max * feat_no:
+                head.no = head.nc + head.reg_max * feat_no
+            # use standard detect forward when weights output a single bbox set
+            if groups == 1 and feat_no == 4:
+                from ultralytics.nn.modules.head import DetectV1
+                head.detect = DetectV1.forward
         except Exception as e:
             logging.warning(f"{self.nodename} failed to adjust head params: {e}")
         # determine expected input channels from first layer weights
