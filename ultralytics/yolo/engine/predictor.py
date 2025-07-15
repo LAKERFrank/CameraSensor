@@ -286,7 +286,7 @@ class BasePredictor:
             self.run_callbacks('on_predict_postprocess_end')
 
             # Visualize, save, write results
-            n = im0s.shape[1]
+            n = im0s.shape[1] if hasattr(im0s, 'shape') else len(im0s)
             for i in range(n):
                 self.seen += 1
                 self.results[i].speed = {
@@ -439,7 +439,8 @@ class BasePredictor:
                 new_pending = []
                 for p in pending:
                     if p["event"].query():
-                        n = p["im0s"].shape[1]
+                        im0s_pending = p["im0s"]
+                        n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                         pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                         infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                         post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
@@ -568,7 +569,8 @@ class BasePredictor:
             new_pending = []
             for p in pending:
                 if p["event"].query():
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                     post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
@@ -718,7 +720,8 @@ class BasePredictor:
             new_pending = []
             for p in pending:
                 if p["event"].query():
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     path = p["path"]
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
@@ -882,7 +885,8 @@ class BasePredictor:
                         "complete_time": complete_time,
                     })
 
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                     post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
@@ -1051,7 +1055,8 @@ class BasePredictor:
                         "cpu_mem": cpu_mem,
                     })
 
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                     post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
