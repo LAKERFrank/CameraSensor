@@ -24,6 +24,32 @@ class CSVWriter():
         df = df.sort_values(by=["Frame"])
         df.to_csv(self.filename, mode='w+', index=False)
 
+
+class PoseCSVWriter:
+    """CSV writer for pose results."""
+
+    def __init__(self, filename: str):
+        self.filename = filename
+        self.csvfile = open(filename, 'w', newline='')
+        self.writer = csv.writer(self.csvfile)
+        header = ['Frame', 'bbox_x1', 'bbox_y1', 'bbox_x2', 'bbox_y2']
+        for i in range(17):
+            header += [f'kp{i+1}_x', f'kp{i+1}_y']
+        header += ['Timestamp']
+        self.writer.writerow(header)
+
+    def write_row(self, frame_id: int, bbox: list, kpts: list, timestamp: float):
+        row = [frame_id] + bbox
+        for kp in kpts:
+            row += [kp[0], kp[1]]
+        row.append(timestamp)
+        self.writer.writerow(row)
+        self.csvfile.flush()
+
+    def close(self):
+        self.csvfile.flush()
+        self.csvfile.close()
+
     def close_sortByTime(self):
         self.csvfile.flush()
         self.csvfile.close()

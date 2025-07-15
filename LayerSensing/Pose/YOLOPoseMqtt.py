@@ -9,7 +9,7 @@ from ultralytics import YOLO
 from ultralytics.yolo.v8.pose.predict import PosePredictor
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
-from lib.writer import CSVWriter
+from lib.writer import PoseCSVWriter
 from lib.point import Point
 from lib.common import ROOTDIR
 
@@ -62,7 +62,7 @@ class YOLOPoseMqtt(threading.Thread):
         if save_csv:
             os.makedirs(path, exist_ok=True)
             csv_path = os.path.join(path, f"{self.nodename}.csv")
-            self.csv_writer = CSVWriter(name=self.nodename, filename=csv_path)
+            self.csv_writer = PoseCSVWriter(csv_path)
         else:
             self.csv_writer = None
         self._stopper = threading.Event()
@@ -96,15 +96,21 @@ class YOLOPoseMqtt(threading.Thread):
             results = self.model(img, verbose=False)
             points = []
             for r in results:
-                if r.keypoints is None:
+                if r.keypoints is None or r.boxes is None:
                     continue
-                # take first keypoint of first detection as example
-                kp = r.keypoints.xy[0][0]
-                p = Point(fid=frame.index, timestamp=frame.monotonic_timestamp,
-                           visibility=1, x=float(kp[0]), y=float(kp[1]), z=0, event=0)
-                points.append(p)
-                if self.csv_writer:
-                    self.csv_writer.writePoints(p)
+                bboxes = r.boxes.xyxy.cpu().tolist()
+                kpts = r.keypoints.xy.cpu().tolist()
+                for bbox, kpt in zip(bboxes, kpts):
+                    # save first keypoint as Point for mqtt publish
+                    if kpt:
+                        kp0 = kpt[0]
+                        p = Point(fid=frame.index, timestamp=frame.monotonic_timestamp,
+                                   visibility=1, x=float(kp0[0]), y=float(kp0[1]), z=0, event=0)
+                        points.append(p)
+                    if self.csv_writer:
+                        kps = [[float(pt[0]), float(pt[1])] for pt in kpt]
+                        self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
+                                                  kps, frame.monotonic_timestamp)
             if points and self.mqttc is not None:
                 self._publish(points)
         if self.csv_writer:
