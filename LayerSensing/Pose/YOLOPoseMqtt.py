@@ -27,16 +27,21 @@ class YOLOPoseMqtt(threading.Thread):
         # initialize predictor manually so we can warm up with the correct channel count
         self.model.predictor = PosePredictor()
         self.model.predictor.setup_model(model=self.model.model, verbose=False)
-        # adjust reg_max from last conv weight if mismatch
+        # adjust head parameters from last conv weight if mismatch
         try:
             head = self.model.model.model[-1]
             conv_out = head.cv2[0][-1]
-            derived_reg_max = conv_out.weight.shape[0] // (head.feat_no * head.num_groups)
-            if derived_reg_max != head.reg_max:
+            oc = conv_out.weight.shape[0]
+            num_groups = getattr(head, 'num_groups', 1)
+            feat_no = getattr(head, 'feat_no', oc // (head.reg_max * num_groups))
+            derived_reg_max = oc // (feat_no * num_groups)
+            if derived_reg_max != head.reg_max or feat_no != getattr(head, 'feat_no', feat_no):
                 head.reg_max = derived_reg_max
-                head.no = head.nc + head.reg_max * head.feat_no
+                if hasattr(head, 'feat_no'):
+                    head.feat_no = feat_no
+                head.no = head.nc + head.reg_max * getattr(head, 'feat_no', feat_no)
         except Exception as e:
-            logging.warning(f"{self.nodename} failed to adjust reg_max: {e}")
+            logging.warning(f"{self.nodename} failed to adjust head params: {e}")
         # determine expected input channels from first layer weights
         try:
             m = self.model.model.model[0]
