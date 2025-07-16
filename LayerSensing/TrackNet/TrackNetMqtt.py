@@ -68,12 +68,14 @@ class TrackNetThread:
         self.output_topic = output_topic
         # wait for new image
         self.isProcessing = False
+        self.valid_size = 0
 
     def init(self):
         self.images = []
         self.fids = []
         self.timestamps = []
         self.points:'list[Point]' = []
+        self.valid_size = 0
 
     def prediction(self):
         # TrackNet prediction
@@ -89,7 +91,10 @@ class TrackNetThread:
 
     def execute(self):
         # TrackNet
-        for idx_f, (image, fid, timestamp) in enumerate(zip(self.images, self.fids, self.timestamps)):
+        for idx_f in range(self.valid_size):
+            image = self.images[idx_f]
+            fid = self.fids[idx_f]
+            timestamp = self.timestamps[idx_f]
             # height, width, channels = image.shape
             ratio_w = self.output_width / WIDTH
             ratio_h = self.output_height / HEIGHT
@@ -131,7 +136,14 @@ class TrackNetThread:
     def run(self):
         #logging.debug("TrackNetThread started.")
         try:
-            if len(self.images) == TRACK_SIZE:
+            self.valid_size = len(self.images)
+            if self.valid_size > 0:
+                if self.valid_size < TRACK_SIZE:
+                    last_img = self.images[-1]
+                    pad = TRACK_SIZE - self.valid_size
+                    self.images.extend([last_img] * pad)
+                    self.fids.extend([self.fids[-1]] * pad)
+                    self.timestamps.extend([self.timestamps[-1]] * pad)
                 self.isProcessing = True
                 self.prediction()
                 self.execute()
@@ -247,7 +259,15 @@ class TrackNetMqtt(threading.Thread):
             list_fids.clear()
             list_timestamps.clear()
             size = 0
-        
+
+        # process remaining frames if any
+        if size > 0:
+            tracknetThread.init()
+            tracknetThread.images = list_images.copy()
+            tracknetThread.fids = list_fids.copy()
+            tracknetThread.timestamps = list_timestamps.copy()
+            tracknetThread.run()
+
         if self.csv_writer is not None:
             self.csv_writer.close()
 
