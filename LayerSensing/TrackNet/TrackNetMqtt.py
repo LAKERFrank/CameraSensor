@@ -86,6 +86,7 @@ class TrackNetThread:
         """
         grays = []
         for img in self.images:
+            img = img.copy()
             if img.ndim == 3 and img.shape[2] == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             if img.shape[0] != HEIGHT or img.shape[1] != WIDTH:
