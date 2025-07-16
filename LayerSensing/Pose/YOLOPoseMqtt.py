@@ -89,7 +89,7 @@ class YOLOPoseMqtt(threading.Thread):
             frame = self.image_buffer.pop(True)
             if frame.is_eos:
                 break
-            img = frame.image
+            img = frame.image.copy()
             # ensure shape matches model expectation
             if self.expected_ch == 3:
                 if img.ndim == 2:
