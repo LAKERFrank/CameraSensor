@@ -78,9 +78,22 @@ class TrackNetThread:
         self.valid_size = 0
 
     def prediction(self):
-        # TrackNet prediction
-        unit = np.stack(self.images, axis=2)
-        unit = np.moveaxis(unit, -1, 0).astype('float32')/255
+        """Run TrackNet prediction on ``self.images``.
+
+        Incoming frames may have arbitrary size or color channels. Convert each
+        frame to grayscale and resize to the expected ``WIDTH``x``HEIGHT`` before
+        stacking them into a 10-channel tensor.
+        """
+        grays = []
+        for img in self.images:
+            if img.ndim == 3 and img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            if img.shape[0] != HEIGHT or img.shape[1] != WIDTH:
+                img = cv2.resize(img, (WIDTH, HEIGHT))
+            grays.append(img)
+
+        unit = np.stack(grays, axis=2)
+        unit = np.moveaxis(unit, -1, 0).astype("float32") / 255
         unit = torch.from_numpy(np.asarray([unit])).to(self.device)
         with torch.no_grad():
             self.h_pred = self.model(unit)
