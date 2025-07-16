@@ -27,10 +27,10 @@ def startTask(use_tracknet: bool = False, use_pose: bool = False):
         ret = sensing.startTrackNet((640, 480), "tracknet_v2", "no114_30.tar", replay_dirname, 0)
         print(f"TrackNet: {ret}")
     if use_pose:
-        ret = sensing.startPose("yolov8n-pose-gray.pt", replay_dirname, 0, visualize=True)
+        ret = sensing.startPose("yolov8n-pose-gray-train.pt", replay_dirname, 0, visualize=True)
         print(f"Pose: {ret}")
 
-startTask(use_tracknet=False, use_pose=True)
+startTask(use_tracknet=True, use_pose=True)
 
 duration = camera.startVideoFeeder(f"{ROOTDIR}/replay/test_video/1_01_00.mp4")
 
