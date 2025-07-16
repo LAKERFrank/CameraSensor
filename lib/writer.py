@@ -24,6 +24,48 @@ class CSVWriter():
         df = df.sort_values(by=["Frame"])
         df.to_csv(self.filename, mode='w+', index=False)
 
+    def close_sortByTime(self):
+        """Close CSV file and sort rows by frame number."""
+        self.csvfile.flush()
+        self.csvfile.close()
+
+        df = pd.read_csv(self.filename)
+        df = df.sort_values(by=["Frame"])
+        df.to_csv(self.filename, mode='w+', index=False)
+
+    def writePoints(self, points):
+        """Write :class:`~lib.point.Point` objects to the CSV."""
+        if isinstance(points, Point):
+            self.writer.writerow([
+                points.fid,
+                points.visibility,
+                points.x,
+                points.y,
+                points.z,
+                points.event,
+                points.timestamp,
+            ])
+        elif isinstance(points, list):
+            for p in points:
+                self.writer.writerow([
+                    p.fid,
+                    p.visibility,
+                    p.x,
+                    p.y,
+                    p.z,
+                    p.event,
+                    p.timestamp,
+                ])
+
+        self.csvfile.flush()
+
+    def setEventByTimestamp(self, event, timestamp):
+        """Update the ``Event`` column for rows matching ``timestamp``."""
+        df = pd.read_csv(self.filename)
+        df.loc[df["Timestamp"] == timestamp, "Event"] = event
+
+        df.to_csv(self.filename, mode='w+', index=False)
+
 
 class PoseCSVWriter:
     """CSV writer for pose results."""
