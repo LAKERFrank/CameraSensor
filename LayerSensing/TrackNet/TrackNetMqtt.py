@@ -247,7 +247,15 @@ class TrackNetMqtt(threading.Thread):
             list_fids.clear()
             list_timestamps.clear()
             size = 0
-        
+
+        # process remaining frames if any
+        if size > 0:
+            tracknetThread.init()
+            tracknetThread.images = list_images
+            tracknetThread.fids = list_fids
+            tracknetThread.timestamps = list_timestamps
+            tracknetThread.run()
+
         if self.csv_writer is not None:
             self.csv_writer.close()
 
