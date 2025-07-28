@@ -4,6 +4,7 @@ import json
 import logging
 
 import cv2
+import pandas as pd
 import paho.mqtt.client as mqtt
 from ultralytics import YOLO
 from ultralytics.yolo.v8.pose.predict import PosePredictor
@@ -16,7 +17,9 @@ from lib.common import ROOTDIR
 class YOLOPoseMqtt(threading.Thread):
     def __init__(self, nodename: str, mqttc: mqtt.Client, output_topic: str,
                  path: str, weights_filename: str, image_buffer: ImageBuffer,
-                 save_csv: bool = True, visualize: bool = False):
+                 save_csv: bool = True, visualize: bool = False,
+                 tracknet_csv_path: str | None = None,
+                 kpt_radius: int = 3):
         super().__init__()
         self.nodename = nodename
         self.mqttc = mqttc
@@ -60,6 +63,16 @@ class YOLOPoseMqtt(threading.Thread):
         # warmup with one-frame input matching expected channels
         self.model.predictor.model.warmup(imgsz=(1, self.expected_ch, 640, 640))
         self.model.predictor.done_warmup = True
+        self.kpt_radius = kpt_radius
+        if tracknet_csv_path and os.path.exists(tracknet_csv_path):
+            try:
+                self.tracknet_df = pd.read_csv(tracknet_csv_path)
+            except Exception as e:
+                logging.warning(f"{self.nodename} failed to load tracknet CSV: {e}")
+                self.tracknet_df = None
+        else:
+            self.tracknet_df = None
+
         if save_csv:
             os.makedirs(path, exist_ok=True)
             csv_path = os.path.join(path, f"{self.nodename}.csv")
@@ -118,7 +131,13 @@ class YOLOPoseMqtt(threading.Thread):
                         self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
                                                   kps, frame.monotonic_timestamp)
             if self.image_dir and results:
-                plotted = results[0].plot()
+                plotted = results[0].plot(kpt_radius=self.kpt_radius)
+                if self.tracknet_df is not None:
+                    row = self.tracknet_df[self.tracknet_df['Frame'] == frame.index]
+                    if not row.empty and int(row.iloc[0]['Visibility']) == 1:
+                        x = int(row.iloc[0]['X'])
+                        y = int(row.iloc[0]['Y'])
+                        cv2.circle(plotted, (x, y), 3, (0, 0, 255), -1)
                 img_path = os.path.join(self.image_dir, f"{frame.index:06d}.jpg")
                 cv2.imwrite(img_path, plotted)
             if points and self.mqttc is not None:

@@ -176,6 +176,7 @@ class Results(SimpleClass):
             boxes=True,
             masks=True,
             probs=True,
+            kpt_radius=5,
             **kwargs  # deprecated args TODO: remove support in 8.2
     ):
         """
@@ -194,6 +195,7 @@ class Results(SimpleClass):
             boxes (bool): Whether to plot the bounding boxes.
             masks (bool): Whether to plot the masks.
             probs (bool): Whether to plot classification probability
+            kpt_radius (int): Radius for keypoints drawing. Default is ``5``.
 
         Returns:
             (numpy.ndarray): A numpy array of the annotated image.
@@ -250,7 +252,7 @@ class Results(SimpleClass):
         # Plot Pose results
         if self.keypoints is not None:
             for k in reversed(self.keypoints.data):
-                annotator.kpts(k, self.orig_shape, kpt_line=kpt_line)
+                annotator.kpts(k, self.orig_shape, radius=kpt_radius, kpt_line=kpt_line)
 
         return annotator.result()
 

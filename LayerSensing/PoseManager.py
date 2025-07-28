@@ -22,9 +22,12 @@ class PoseManager:
             replay_path = f"{ROOTDIR}/replay/{replay_dirname}"
             os.makedirs(replay_path, exist_ok=True)
 
+            tracknet_csv = os.path.join(replay_path, f"TrackNet_{cam_idx}.csv")
             self.poseThread = YOLOPoseMqtt(
                 f"Pose_{cam_idx}", self.mqttc, pose_topic, replay_path,
-                weights_filename, self.imageBuffer, True, visualize)
+                weights_filename, self.imageBuffer, True, visualize,
+                tracknet_csv_path=tracknet_csv,
+                kpt_radius=3)
             self.poseThread.start()
             return {"status": "ready"}
         except Exception as e:
