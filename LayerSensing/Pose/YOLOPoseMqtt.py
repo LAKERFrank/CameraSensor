@@ -5,6 +5,7 @@ import logging
 
 import cv2
 import paho.mqtt.client as mqtt
+from typing import Tuple
 from ultralytics import YOLO
 from ultralytics.yolo.v8.pose.predict import PosePredictor
 
@@ -105,7 +106,7 @@ class YOLOPoseMqtt(threading.Thread):
         except Exception as e:
             logging.error(f"{self.nodename} tracknet parse error: {e}")
 
-    def _apply_tracknet(self, fid: int, coord: tuple[int, int]):
+    def _apply_tracknet(self, fid: int, coord: Tuple[int, int]):
         """Store TrackNet result or draw directly if the image already exists."""
         if self.image_dir:
             img_path = os.path.join(self.image_dir, f"{fid:06d}.jpg")
