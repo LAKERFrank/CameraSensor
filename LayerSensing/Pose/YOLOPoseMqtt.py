@@ -8,6 +8,7 @@ import paho.mqtt.client as mqtt
 from typing import Tuple
 from ultralytics import YOLO
 from ultralytics.yolo.v8.pose.predict import PosePredictor
+from ultralytics.yolo.utils.plotting import Annotator, colors
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
 from lib.writer import PoseCSVWriter
@@ -118,6 +119,19 @@ class YOLOPoseMqtt(threading.Thread):
                     return
         self.tracknet_buffer[fid] = coord
 
+    def _draw_result(self, result, radius: int = 2):
+        """Return an annotated image with smaller keypoint radius."""
+        annotator = Annotator(result.orig_img.copy(), example=result.names)
+        if result.boxes is not None:
+            for d in reversed(result.boxes):
+                c = int(d.cls)
+                label = f"{result.names[c]} {float(d.conf):.2f}"
+                annotator.box_label(d.xyxy.squeeze(), label, color=colors(c, True))
+        if result.keypoints is not None:
+            for k in reversed(result.keypoints.data):
+                annotator.kpts(k, result.orig_shape, radius=radius, kpt_line=True)
+        return annotator.result()
+
     def run(self):
         logging.info(f"{self.nodename} start processing...")
         while not self._stopped():
@@ -153,7 +167,7 @@ class YOLOPoseMqtt(threading.Thread):
                         self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
                                                   kps, frame.monotonic_timestamp)
             if self.image_dir and results:
-                plotted = results[0].plot(kpt_radius=2)
+                plotted = self._draw_result(results[0], radius=2)
                 with self._tracknet_lock:
                     coord = self.tracknet_buffer.pop(frame.index, None)
                 if coord:
