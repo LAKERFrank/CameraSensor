@@ -172,6 +172,7 @@ class Results(SimpleClass):
             img=None,
             im_gpu=None,
             kpt_line=True,
+            kpt_radius=5,
             labels=True,
             boxes=True,
             masks=True,
@@ -190,6 +191,7 @@ class Results(SimpleClass):
             img (numpy.ndarray): Plot to another image. if not, plot to original image.
             im_gpu (torch.Tensor): Normalized image in gpu with shape (1, 3, 640, 640), for faster mask plotting.
             kpt_line (bool): Whether to draw lines connecting keypoints.
+            kpt_radius (int): Radius of keypoint circles.
             labels (bool): Whether to plot the label of bounding boxes.
             boxes (bool): Whether to plot the bounding boxes.
             masks (bool): Whether to plot the masks.
@@ -250,7 +252,7 @@ class Results(SimpleClass):
         # Plot Pose results
         if self.keypoints is not None:
             for k in reversed(self.keypoints.data):
-                annotator.kpts(k, self.orig_shape, kpt_line=kpt_line)
+                annotator.kpts(k, self.orig_shape, radius=kpt_radius, kpt_line=kpt_line)
 
         return annotator.result()
 

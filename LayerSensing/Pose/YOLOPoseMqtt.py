@@ -23,6 +23,16 @@ class YOLOPoseMqtt(threading.Thread):
         self.output_topic = output_topic
         self.image_buffer = image_buffer
         self.visualize = visualize
+        # topic for receiving TrackNet points for visualization
+        self.device_name = output_topic.split('/')[2] if len(output_topic.split('/')) > 2 else ''
+        self.tracknet_topic = f"/DATA/{self.device_name}/LayerSensing/TrackNet"
+        self.tracknet_buffer = {}
+        self._tracknet_lock = threading.Lock()
+        try:
+            self.mqttc.message_callback_add(self.tracknet_topic, self._on_tracknet)
+            self.mqttc.subscribe(self.tracknet_topic)
+        except Exception as e:
+            logging.warning(f"{self.nodename} failed to subscribe TrackNet topic: {e}")
         weight_path = os.path.join(ROOTDIR, 'weights', weights_filename)
         self.model = YOLO(weight_path)
         # initialize predictor manually so we can warm up with the correct channel count
@@ -83,6 +93,18 @@ class YOLOPoseMqtt(threading.Thread):
         payload = {"linear": [p.toJson() for p in points]}
         self.mqttc.publish(self.output_topic, json.dumps(payload))
 
+    def _on_tracknet(self, client, userdata, msg):
+        try:
+            data = json.loads(msg.payload)
+            with self._tracknet_lock:
+                for p in data.get('linear', []):
+                    fid = int(p.get('id', -1))
+                    x = int(p['pos']['x'])
+                    y = int(p['pos']['y'])
+                    self.tracknet_buffer[fid] = (x, y)
+        except Exception as e:
+            logging.error(f"{self.nodename} tracknet parse error: {e}")
+
     def run(self):
         logging.info(f"{self.nodename} start processing...")
         while not self._stopped():
@@ -118,7 +140,11 @@ class YOLOPoseMqtt(threading.Thread):
                         self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
                                                   kps, frame.monotonic_timestamp)
             if self.image_dir and results:
-                plotted = results[0].plot()
+                plotted = results[0].plot(kpt_radius=3)
+                with self._tracknet_lock:
+                    coord = self.tracknet_buffer.pop(frame.index, None)
+                if coord:
+                    cv2.circle(plotted, coord, 3, (0, 0, 255), -1)
                 img_path = os.path.join(self.image_dir, f"{frame.index:06d}.jpg")
                 cv2.imwrite(img_path, plotted)
             if points and self.mqttc is not None:
