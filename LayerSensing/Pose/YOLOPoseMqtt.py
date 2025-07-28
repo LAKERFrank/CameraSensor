@@ -101,9 +101,21 @@ class YOLOPoseMqtt(threading.Thread):
                     fid = int(p.get('id', -1))
                     x = int(p['pos']['x'])
                     y = int(p['pos']['y'])
-                    self.tracknet_buffer[fid] = (x, y)
+                    self._apply_tracknet(fid, (x, y))
         except Exception as e:
             logging.error(f"{self.nodename} tracknet parse error: {e}")
+
+    def _apply_tracknet(self, fid: int, coord: tuple[int, int]):
+        """Store TrackNet result or draw directly if the image already exists."""
+        if self.image_dir:
+            img_path = os.path.join(self.image_dir, f"{fid:06d}.jpg")
+            if os.path.exists(img_path):
+                img = cv2.imread(img_path)
+                if img is not None:
+                    cv2.circle(img, coord, 2, (0, 0, 255), -1)
+                    cv2.imwrite(img_path, img)
+                    return
+        self.tracknet_buffer[fid] = coord
 
     def run(self):
         logging.info(f"{self.nodename} start processing...")
@@ -140,11 +152,11 @@ class YOLOPoseMqtt(threading.Thread):
                         self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
                                                   kps, frame.monotonic_timestamp)
             if self.image_dir and results:
-                plotted = results[0].plot(kpt_radius=3)
+                plotted = results[0].plot(kpt_radius=2)
                 with self._tracknet_lock:
                     coord = self.tracknet_buffer.pop(frame.index, None)
                 if coord:
-                    cv2.circle(plotted, coord, 3, (0, 0, 255), -1)
+                    cv2.circle(plotted, coord, 2, (0, 0, 255), -1)
                 img_path = os.path.join(self.image_dir, f"{frame.index:06d}.jpg")
                 cv2.imwrite(img_path, plotted)
             if points and self.mqttc is not None:
