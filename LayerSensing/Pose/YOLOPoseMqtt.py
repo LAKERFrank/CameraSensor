@@ -118,7 +118,11 @@ class YOLOPoseMqtt(threading.Thread):
                         self.csv_writer.write_row(frame.index, [float(v) for v in bbox],
                                                   kps, frame.monotonic_timestamp)
             if self.image_dir and results:
-                plotted = results[0].plot()
+                base = frame.image
+                if base.ndim == 3 and base.shape[2] == 3:
+                    base = cv2.cvtColor(base, cv2.COLOR_BGR2GRAY)
+                base = cv2.cvtColor(base, cv2.COLOR_GRAY2BGR)
+                plotted = results[0].plot(img=base)
                 img_path = os.path.join(self.image_dir, f"{frame.index:06d}.jpg")
                 cv2.imwrite(img_path, plotted)
             if points and self.mqttc is not None:
