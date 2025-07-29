@@ -18,85 +18,113 @@ from ultralytics.yolo.utils import DEFAULT_CFG, LOGGER, SETTINGS, callbacks
 from ultralytics.yolo.utils.files import increment_path
 from ultralytics.yolo.utils.torch_utils import select_device
 import os
+
 DIRNAME = os.path.dirname(os.path.abspath(__file__))
 ROOTDIR = os.path.dirname(DIRNAME)
 
-def non_max_suppression(pred_conf, pred_x, pred_y, conf_threshold=0.5, dis_tolerance=10, stride=8):
-        """
-        Apply non-maximum suppression (NMS) to filter out overlapping balls based on distance.
-        
-        Args:
-        - pred_conf (torch.Tensor): 80x80 confidence tensor.
-        - pred_x (torch.Tensor): 80x80 x-coordinate tensor.
-        - pred_y (torch.Tensor): 80x80 y-coordinate tensor.
-        - conf_threshold (float): Confidence threshold.
-        - dis_tolerance (float): Minimum allowable distance between two detections.
-        
-        Returns:
-        - keep (list): List of (x, y, confidence) tuples for retained detections.
-        """
-        # 1. 篩選置信度 >= conf_threshold 的 cell
-        mask = pred_conf >= conf_threshold
-        conf_values = pred_conf[mask]
-        indices = torch.nonzero(mask)
 
-        # 2. 依照置信度降序排序
-        sorted_indices = torch.argsort(conf_values, descending=True)
-        sorted_conf_values = conf_values[sorted_indices]
-        sorted_positions = indices[sorted_indices]
+def non_max_suppression(
+    pred_conf, pred_x, pred_y, conf_threshold=0.5, dis_tolerance=10, stride=8
+):
+    """
+    Apply non-maximum suppression (NMS) to filter out overlapping balls based on distance.
 
-        # 3. 初始化結果列表
-        keep = []
-        result = []
-        center = stride/2
-        # 4. 應用距離檢查的 NMS
-        for i in range(len(sorted_conf_values)):
+    Args:
+    - pred_conf (torch.Tensor): 80x80 confidence tensor.
+    - pred_x (torch.Tensor): 80x80 x-coordinate tensor.
+    - pred_y (torch.Tensor): 80x80 y-coordinate tensor.
+    - conf_threshold (float): Confidence threshold.
+    - dis_tolerance (float): Minimum allowable distance between two detections.
 
-            y_coordinates, x_coordinates = sorted_positions[i].tolist()
-            x1 = center*stride - pred_x[y_coordinates][x_coordinates][0]+pred_x[y_coordinates][x_coordinates][1]
-            y1 = center*stride - pred_y[y_coordinates][x_coordinates][0]+pred_y[y_coordinates][x_coordinates][1]
-            conf = sorted_conf_values[i].item()
+    Returns:
+    - keep (list): List of (x, y, confidence) tuples for retained detections.
+    """
+    # 1. 篩選置信度 >= conf_threshold 的 cell
+    mask = pred_conf >= conf_threshold
+    conf_values = pred_conf[mask]
+    indices = torch.nonzero(mask)
 
-            x_coordinates *= stride
-            y_coordinates *= stride
-            current_x = x_coordinates+x1
-            current_y = y_coordinates+y1
+    # 2. 依照置信度降序排序
+    sorted_indices = torch.argsort(conf_values, descending=True)
+    sorted_conf_values = conf_values[sorted_indices]
+    sorted_positions = indices[sorted_indices]
 
-            # 只保留與所有已保留框距離大於 dis_tolerance 的框
-            is_far_enough = True
-            for x2, y2, _ in keep:
-                distance = torch.sqrt((current_x - x2) ** 2 + (current_y - y2) ** 2)
-                if distance < dis_tolerance:
-                    is_far_enough = False
-                    break
+    # 3. 初始化結果列表
+    keep = []
+    result = []
+    center = stride / 2
+    # 4. 應用距離檢查的 NMS
+    for i in range(len(sorted_conf_values)):
 
-            if is_far_enough:
-                keep.append((current_x, current_y, conf))
-                result.append((x_coordinates/stride, y_coordinates/stride, conf))
+        y_coordinates, x_coordinates = sorted_positions[i].tolist()
+        x1 = (
+            center * stride
+            - pred_x[y_coordinates][x_coordinates][0]
+            + pred_x[y_coordinates][x_coordinates][1]
+        )
+        y1 = (
+            center * stride
+            - pred_y[y_coordinates][x_coordinates][0]
+            + pred_y[y_coordinates][x_coordinates][1]
+        )
+        conf = sorted_conf_values[i].item()
 
-        return result
+        x_coordinates *= stride
+        y_coordinates *= stride
+        current_x = x_coordinates + x1
+        current_y = y_coordinates + y1
+
+        # 只保留與所有已保留框距離大於 dis_tolerance 的框
+        is_far_enough = True
+        for x2, y2, _ in keep:
+            distance = torch.sqrt((current_x - x2) ** 2 + (current_y - y2) ** 2)
+            if distance < dis_tolerance:
+                is_far_enough = False
+                break
+
+        if is_far_enough:
+            keep.append((current_x, current_y, conf))
+            result.append((x_coordinates / stride, y_coordinates / stride, conf))
+
+    return result
+
 
 class ImageBufferPredictor:
-    def __init__(self, weight: str, image_buffer: ImageBuffer, output_width: int = None,
-                 output_height: int = None, mqttc: mqtt.Client = None, output_topic: str = None,
-                 cfg=DEFAULT_CFG, overrides=None, path: str = None, save_pred_images: bool = False, use_nms: bool = True):
+    def __init__(
+        self,
+        weight: str,
+        image_buffer: ImageBuffer,
+        output_width: int = None,
+        output_height: int = None,
+        mqttc: mqtt.Client = None,
+        output_topic: str = None,
+        cfg=DEFAULT_CFG,
+        overrides=None,
+        path: str = None,
+        save_pred_images: bool = False,
+        use_nms: bool = True,
+    ):
 
         self.args = get_cfg(cfg, overrides)
         self.save_dir = path
+        if save_pred_images and self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
         weight = f"{ROOTDIR}/Tracknet1000/weights/best.pt"
-        self.model = AutoBackend(weight,
-                                 device=select_device(self.args.device, verbose=False),
-                                 dnn=self.args.dnn,
-                                 fp16=self.args.half,
-                                 fuse=True,
-                                 verbose=False)
+        self.model = AutoBackend(
+            weight,
+            device=select_device(self.args.device, verbose=False),
+            dnn=self.args.dnn,
+            fp16=self.args.half,
+            fuse=True,
+            verbose=False,
+        )
         self.device = self.model.device
         self.args.half = self.model.fp16
         self.model.eval()
 
         self.output_width = output_width
         self.output_height = output_height
-        print(f'[Predictor] Output size: {self.output_width}x{self.output_height}')
+        print(f"[Predictor] Output size: {self.output_width}x{self.output_height}")
 
         self.mqttc = mqttc
         self.output_topic = output_topic
@@ -105,7 +133,9 @@ class ImageBufferPredictor:
         self.imgsz = 640
 
         self.max_streams = torch.cuda.device_count() * 2
-        self.streams = [torch.cuda.Stream(device=self.device) for _ in range(self.max_streams)]
+        self.streams = [
+            torch.cuda.Stream(device=self.device) for _ in range(self.max_streams)
+        ]
         self.event_pool = queue.SimpleQueue()
         self.save_pred_images = save_pred_images
         self.use_nms = use_nms
@@ -142,7 +172,9 @@ class ImageBufferPredictor:
                 tensor, fids, timestamps = self._preprocess()
                 self.stream_idx = (self.stream_idx + 1) % self.max_streams
                 try:
-                    self.infer_q.put_nowait((tensor, (fids, timestamps), self.stream_idx))
+                    self.infer_q.put_nowait(
+                        (tensor, (fids, timestamps), self.stream_idx)
+                    )
                 except queue.Full:
                     LOGGER.warning("[Predictor] infer_q 已滿，無法放入新資料")
                 if not self.running:
@@ -156,7 +188,9 @@ class ImageBufferPredictor:
             frame = self.image_buffer.pop(True)
             if frame.is_eos:
                 self.stop()
-                self.mqttc.publish(self.output_topic, json.dumps({"linear": [], "EOF": True}))
+                self.mqttc.publish(
+                    self.output_topic, json.dumps({"linear": [], "EOF": True})
+                )
                 break
 
             # 目前傳入的尺寸不精確，在此額外處理
@@ -168,7 +202,9 @@ class ImageBufferPredictor:
             if img.ndim == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = self.pad_to_square(img)
-            img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
+            img = cv2.resize(
+                img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC
+            )
             frames.append(np.expand_dims(img, axis=0))
             fids.append(frame.index)
             timestamps.append(frame.monotonic_timestamp)
@@ -235,7 +271,6 @@ class ImageBufferPredictor:
                 LOGGER.warning(f"Postprocess loop error: {e}")
                 raise e
 
-
     def pad_to_square(self, img: np.ndarray) -> np.ndarray:
         h, w = img.shape[:2]
         size = max(h, w)
@@ -243,7 +278,9 @@ class ImageBufferPredictor:
         padded[:h, :w] = img
         return padded
 
-    def _postprocess(self, output_tensor: torch.Tensor, meta:Tuple[List[int], List[float]]):
+    def _postprocess(
+        self, output_tensor: torch.Tensor, meta: Tuple[List[int], List[float]]
+    ):
         fids, timestamps = meta
 
         conf_threshold = 0.5
@@ -253,14 +290,15 @@ class ImageBufferPredictor:
         stride = 8
 
         feats = output_tensor[0][0]
-        pred_distri, pred_probs = feats.view(feat_no + nc, -1).split(
-            (feat_no, nc), 0)
-        
+        pred_distri, pred_probs = feats.view(feat_no + nc, -1).split((feat_no, nc), 0)
+
         pred_probs = pred_probs.permute(1, 0)
         pred_pos = pred_distri.permute(1, 0)
 
         each_probs = pred_probs.view(10, cell_num, cell_num)
-        each_pos_x, each_pos_y, each_pos_nx, each_pos_ny = pred_pos.view(10, cell_num, cell_num, feat_no).split([2, 2, 2, 2], dim=3)
+        each_pos_x, each_pos_y, each_pos_nx, each_pos_ny = pred_pos.view(
+            10, cell_num, cell_num, feat_no
+        ).split([2, 2, 2, 2], dim=3)
 
         frame_preds = []
         metadata = []
@@ -277,16 +315,32 @@ class ImageBufferPredictor:
             p_conf = each_probs[frame_idx]
             pred_local = []
             if self.use_nms:
-                nms_preds = non_max_suppression(p_conf, p_cell_x, p_cell_y, conf_threshold=conf_threshold, dis_tolerance=20)
+                nms_preds = non_max_suppression(
+                    p_conf,
+                    p_cell_x,
+                    p_cell_y,
+                    conf_threshold=conf_threshold,
+                    dis_tolerance=20,
+                )
 
                 # 取出 nms 的結果
                 for pred in nms_preds:
                     max_x, max_y, max_conf = pred
-                    pred_x = max_x*stride + (center*stride-p_cell_x[int(max_y)][int(max_x)][0]+p_cell_x[int(max_y)][int(max_x)][1])
-                    pred_y = max_y*stride + (center*stride-p_cell_y[int(max_y)][int(max_x)][0]+p_cell_y[int(max_y)][int(max_x)][1])
+                    pred_x = max_x * stride + (
+                        center * stride
+                        - p_cell_x[int(max_y)][int(max_x)][0]
+                        + p_cell_x[int(max_y)][int(max_x)][1]
+                    )
+                    pred_y = max_y * stride + (
+                        center * stride
+                        - p_cell_y[int(max_y)][int(max_x)][0]
+                        + p_cell_y[int(max_y)][int(max_x)][1]
+                    )
 
                     if fid != -1:
-                        real_result = self.convert_coord_to_original_ratio(coord=(pred_x.item(), pred_y.item(), max_conf))
+                        real_result = self.convert_coord_to_original_ratio(
+                            coord=(pred_x.item(), pred_y.item(), max_conf)
+                        )
                         frame_preds.append(real_result)
                         metadata.append((fid, timestamp))
                         if self.save_pred_images:
@@ -295,34 +349,50 @@ class ImageBufferPredictor:
                 p_conf_masked = p_conf * (p_conf >= conf_threshold).float()
                 max_position = torch.argmax(p_conf_masked)
                 # max_y, max_x = np.unravel_index(max_position, p_conf.shape)
-                max_y, max_x = np.unravel_index(max_position.cpu().numpy(), p_conf.shape)
+                max_y, max_x = np.unravel_index(
+                    max_position.cpu().numpy(), p_conf.shape
+                )
                 max_conf = p_conf[max_y, max_x].item()
                 if max_conf < conf_threshold:
                     continue
 
-                pred_x = max_x*stride + (center*stride-p_cell_x[max_y][max_x][0]+p_cell_x[max_y][max_x][1])
-                pred_y = max_y*stride + (center*stride-p_cell_y[max_y][max_x][0]+p_cell_y[max_y][max_x][1])
+                pred_x = max_x * stride + (
+                    center * stride
+                    - p_cell_x[max_y][max_x][0]
+                    + p_cell_x[max_y][max_x][1]
+                )
+                pred_y = max_y * stride + (
+                    center * stride
+                    - p_cell_y[max_y][max_x][0]
+                    + p_cell_y[max_y][max_x][1]
+                )
                 if fid != -1:
-                    real_result = self.convert_coord_to_original_ratio(coord=(pred_x.item(), pred_y.item(), max_conf))
+                    real_result = self.convert_coord_to_original_ratio(
+                        coord=(pred_x.item(), pred_y.item(), max_conf)
+                    )
                     frame_preds.append(real_result)
                     metadata.append((fid, timestamp))
                     if self.save_pred_images:
                         pred_local.append(real_result)
-            
+
             if self.save_pred_images:
                 img = self._frame_cache.get(fid)
-                self.save_image_with_points(pred_local, img, f"{self.save_dir}/{fid}.png")
+                self.save_image_with_points(
+                    pred_local, img, f"{self.save_dir}/{fid}.png"
+                )
 
         result = (frame_preds, metadata)
         if self.mqttc is not None:
-            self._publishPoints((frame_preds, metadata) if self.use_nms else (frame_preds[:1], metadata[:1]))
+            self._publishPoints(
+                (frame_preds, metadata)
+                if self.use_nms
+                else (frame_preds[:1], metadata[:1])
+            )
         # print("[Result] output shape:", len(frame_preds), "fid", fid, "timestamp", timestamp, "endTime", time.monotonic())
         return result
 
     def convert_coord_to_original_ratio(
-        self,
-        coord: Tuple[float, float, float],
-        model_input_size: int = 640
+        self, coord: Tuple[float, float, float], model_input_size: int = 640
     ) -> Tuple[float, float, float]:
         """
         將單一 (x, y, conf) 從 640x640 padding 空間還原到原始影像座標比例。
@@ -331,7 +401,7 @@ class ImageBufferPredictor:
         Args:
             coord: (x, y, conf)
             model_input_size: 模型輸入大小(預設 640)
-            
+
         Returns:
             (x_orig, y_orig, conf)
         """
@@ -351,8 +421,6 @@ class ImageBufferPredictor:
 
         return (x_orig, y_orig, conf)
 
-
-
     def _publishPoints(self, resultItems):
         (frame_preds, metadata) = resultItems
         points = []
@@ -360,19 +428,27 @@ class ImageBufferPredictor:
             (output_x, output_y, output_conf) = frame_preds[i]
             (fid, timestamp) = metadata[i]
 
-            points.append(Point(
-                fid=fid,
-                timestamp=timestamp,
-                visibility=output_conf>=0.5,
-                x=output_x,
-                y=output_y,
-                ))
+            points.append(
+                Point(
+                    fid=fid,
+                    timestamp=timestamp,
+                    visibility=output_conf >= 0.5,
+                    x=output_x,
+                    y=output_y,
+                )
+            )
         payload = {"linear": [p.toJson() for p in points]}
         self.mqttc.publish(self.output_topic, json.dumps(payload))
-    def save_image_with_points(self, points: List[Tuple[float, float, float]], image: np.ndarray, save_path: str):
+
+    def save_image_with_points(
+        self,
+        points: List[Tuple[float, float, float]],
+        image: np.ndarray,
+        save_path: str,
+    ):
         """
         將點集 (x, y, conf) 繪製到影像上，並保存到指定路徑。
-        
+
         Args:
             points (List[Tuple[float, float, float]]): [(x, y, conf), ...]
             image (np.ndarray): BGR 或灰階影像 (H, W, C) 或 (H, W)。

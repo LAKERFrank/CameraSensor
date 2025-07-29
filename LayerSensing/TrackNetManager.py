@@ -9,17 +9,24 @@ from LayerSensing.TrackNet.TrackNetMqtt import TrackNetMqtt
 from LayerSensing.Datafeeder import Datafeeder
 from lib.common import ROOTDIR
 
+
 class TrackNetManager:
-    def __init__(self, device_name, mqttc:mqtt.Client, imgbuf:ImageBuffer):
+    def __init__(self, device_name, mqttc: mqtt.Client, imgbuf: ImageBuffer):
 
         self.deviceName = device_name
         self.mqttc = mqttc
         self.imageBuffer = imgbuf
         self.tracknetThread = None
 
-    def startTrackNet(self, camera_origin_size: 'tuple[int, int]',
-                      tracknet_ver:str, weights_filename: str,
-                      replay_dirname: str, cam_idx: int):
+    def startTrackNet(
+        self,
+        camera_origin_size: "tuple[int, int]",
+        tracknet_ver: str,
+        weights_filename: str,
+        replay_dirname: str,
+        cam_idx: int,
+        visualize: bool = False,
+    ):
         """Start Tracknet thread
            會存在 PROJECT_ROOT/replay/{replay_dirname}/TrackNet_{cam_idx}.csv
 
@@ -27,8 +34,9 @@ class TrackNetManager:
             camera_origin_size (tuple[int, int]): 相機原始解析度 (Tracknet會回推)
             tracknet_ver (str): Tracknet版本 ("tracknet_v2" or "tracknet_1000")
             weights_filename (str): 模型檔案名稱
-            replay_dirname (str): 儲存的資料夾名稱 
+            replay_dirname (str): 儲存的資料夾名稱
             cam_idx (int): 相機編號
+            visualize (bool): 是否儲存帶有預測點的影像
 
         Returns:
             dict: 狀態
@@ -46,15 +54,31 @@ class TrackNetManager:
             os.makedirs(replay_path, exist_ok=True)
 
             if tracknet_ver == "tracknet_v2":
-                self.tracknetThread \
-                    = TrackNetMqtt(f"TrackNet_{cam_idx}", self.mqttc, tracknet_topic, camera_origin_size[0],
-                                   camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                self.tracknetThread = TrackNetMqtt(
+                    f"TrackNet_{cam_idx}",
+                    self.mqttc,
+                    tracknet_topic,
+                    camera_origin_size[0],
+                    camera_origin_size[1],
+                    replay_path,
+                    weights_filename,
+                    self.imageBuffer,
+                    True,
+                    visualize,
+                )
             elif tracknet_ver == "tracknet_1000":
-                self.tracknetThread \
-                    = TrackNet1000Mqtt(f"TrackNet_{cam_idx}", self.mqttc, tracknet_topic, camera_origin_size[0],
-                                   camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                self.tracknetThread = TrackNet1000Mqtt(
+                    f"TrackNet_{cam_idx}",
+                    self.mqttc,
+                    tracknet_topic,
+                    camera_origin_size[0],
+                    camera_origin_size[1],
+                    replay_path,
+                    weights_filename,
+                    self.imageBuffer,
+                    True,
+                    visualize,
+                )
             else:
                 raise Exception(f"tracknet_ver={tracknet_ver} is not acceptable.")
             self.tracknetThread.start()
@@ -74,7 +98,10 @@ class TrackNetManager:
                 self.imageBuffer.push(frame)
             self.tracknetThread.join()
             self.tracknetThread = None
-            return {"status": "stopped " + ("(EOS reached)" if wait_for_eos else "(Force stop)")}
+            return {
+                "status": "stopped "
+                + ("(EOS reached)" if wait_for_eos else "(Force stop)")
+            }
         except Exception as e:
             return {"status": "failure", "message": str(e)}
 

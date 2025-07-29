@@ -1,6 +1,7 @@
 """
 TrackNet10 : find out the ball on frame on 2D Coordinate System
 """
+
 from datetime import datetime
 import logging
 import os
@@ -21,11 +22,21 @@ from lib.common import insertById, loadConfig, loadNodeConfig, ROOTDIR
 from lib.point import Point, removeOutliers
 from lib.writer import CSVWriter
 
+
 class TrackNet1000Mqtt(threading.Thread):
-    def __init__(self, nodename, mqttc:mqtt.Client, output_topic:str,
-                 camera_origin_width:int, camera_origin_height:int,
-                 path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+    def __init__(
+        self,
+        nodename,
+        mqttc: mqtt.Client,
+        output_topic: str,
+        camera_origin_width: int,
+        camera_origin_height: int,
+        path: str,
+        weights_filename: str,
+        imgbuf: ImageBuffer,
+        save_csv: bool = True,
+        visualize: bool = False,
+    ):
         """
         初始化 TrackNet1000 MQTT 推論執行緒。
 
@@ -57,10 +68,10 @@ class TrackNet1000Mqtt(threading.Thread):
         self.isProcessing = False
 
         overrides = {}
-        overrides['model'] = model_path
-        overrides['mode'] = 'predict_v2'
-        overrides['data'] = 'tracknet.yaml'
-        overrides['batch'] = 1
+        overrides["model"] = model_path
+        overrides["mode"] = "predict_v2"
+        overrides["data"] = "tracknet.yaml"
+        overrides["batch"] = 1
         self.predictor = ImageBufferPredictor.ImageBufferPredictor(
             weight=model_path,
             image_buffer=imgbuf,
@@ -70,6 +81,7 @@ class TrackNet1000Mqtt(threading.Thread):
             output_topic=output_topic,
             overrides=overrides,
             path=path,
+            save_pred_images=visualize,
         )
 
     def run(self):

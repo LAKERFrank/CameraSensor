@@ -22,13 +22,24 @@ sensing = RpcSensing("test-0", mqtt.mqttc)
 # save dir
 replay_dirname = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
+
 def startTask(use_tracknet: bool = False, use_pose: bool = False):
     if use_tracknet:
-        ret = sensing.startTrackNet((640, 480), "tracknet_v2", "no114_30.tar", replay_dirname, 0)
+        ret = sensing.startTrackNet(
+            (640, 480),
+            "tracknet_v2",
+            "no114_30.tar",
+            replay_dirname,
+            0,
+            visualize=True,
+        )
         print(f"TrackNet: {ret}")
     if use_pose:
-        ret = sensing.startPose("yolov8n-pose-gray-train.pt", replay_dirname, 0, visualize=True)
+        ret = sensing.startPose(
+            "yolov8n-pose-gray-train.pt", replay_dirname, 0, visualize=True
+        )
         print(f"Pose: {ret}")
+
 
 startTask(use_tracknet=True, use_pose=True)
 

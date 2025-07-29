@@ -1,6 +1,7 @@
 """
 TrackNet10 : find out the ball on frame on 2D Coordinate System
 """
+
 import logging
 import os
 import threading
@@ -23,12 +24,14 @@ HEIGHT = 288
 WIDTH = 512
 TRACK_SIZE = 10
 
-class BoundingBox():
+
+class BoundingBox:
     def __init__(self, left, top, right, bottom):
         self.left = left
         self.top = top
         self.right = right
         self.bottom = bottom
+
 
 def isBlacklist(boxs, x, y):
     for box in boxs:
@@ -36,36 +39,47 @@ def isBlacklist(boxs, x, y):
             return True
     return False
 
+
 def generateBlacklist(filename):
     blacklist = []
     with open(filename) as f:
         line = f.readline()
         while line:
             line = f.readline()
-            l = line.split(',')
+            l = line.split(",")
             if len(l) == 4:
                 b = BoundingBox(int(l[0]), int(l[1]), int(l[2]), int(l[3]))
                 blacklist.append(b)
     return blacklist
 
+
 class TrackNetThread:
-    def __init__(self, device:str, model:TrackNet10, mqttc:mqtt.Client,
-                 output_topic:str, blacklist,
-                 output_width:int, output_height:int,
-                 csv_writer:CSVWriter):
+    def __init__(
+        self,
+        device: str,
+        model: TrackNet10,
+        mqttc: mqtt.Client,
+        output_topic: str,
+        blacklist,
+        output_width: int,
+        output_height: int,
+        csv_writer: CSVWriter,
+        image_dir: str | None = None,
+    ):
 
         self.images = []
         self.fids = []
         self.timestamps = []
         self.device = device
         self.model = model
-        self.points:'list[Point]' = []
+        self.points: "list[Point]" = []
         self.blacklist = blacklist
         self.output_width = output_width
         self.output_height = output_height
         self.csv_writer = csv_writer
         self.mqttc = mqttc
         self.output_topic = output_topic
+        self.image_dir = image_dir
         # wait for new image
         self.isProcessing = False
         self.valid_size = 0
@@ -74,7 +88,7 @@ class TrackNetThread:
         self.images = []
         self.fids = []
         self.timestamps = []
-        self.points:'list[Point]' = []
+        self.points: "list[Point]" = []
         self.valid_size = 0
 
     def prediction(self):
@@ -100,8 +114,8 @@ class TrackNetThread:
             self.h_pred = self.model(unit)
         self.h_pred = self.h_pred > 0.5
         self.h_pred = self.h_pred.cpu().numpy()
-        self.h_pred = self.h_pred.astype('uint8')
-        self.h_pred = self.h_pred[0]*255
+        self.h_pred = self.h_pred.astype("uint8")
+        self.h_pred = self.h_pred[0] * 255
 
     def execute(self):
         # TrackNet
@@ -112,13 +126,26 @@ class TrackNetThread:
             # height, width, channels = image.shape
             ratio_w = self.output_width / WIDTH
             ratio_h = self.output_height / HEIGHT
-            #show = np.copy(image)
-            #show = cv2.resize(show, (width, height))
+            # show = np.copy(image)
+            # show = cv2.resize(show, (width, height))
             # Ball tracking
-            if np.amax(self.h_pred[idx_f]) <= 0: # no ball
-                point = Point(fid=fid, timestamp=timestamp, visibility=0, x=0, y=0, z=0, event=0, speed=0)
+            if np.amax(self.h_pred[idx_f]) <= 0:  # no ball
+                point = Point(
+                    fid=fid,
+                    timestamp=timestamp,
+                    visibility=0,
+                    x=0,
+                    y=0,
+                    z=0,
+                    event=0,
+                    speed=0,
+                )
             else:
-                (cnts, _) = cv2.findContours(self.h_pred[idx_f].copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                (cnts, _) = cv2.findContours(
+                    self.h_pred[idx_f].copy(),
+                    cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_SIMPLE,
+                )
                 rects = [cv2.boundingRect(ctr) for ctr in cnts]
                 max_area_idx = 0
                 max_area = rects[max_area_idx][2] * rects[max_area_idx][3]
@@ -128,16 +155,44 @@ class TrackNetThread:
                         max_area_idx = i
                         max_area = area
                 target = rects[max_area_idx]
-                (cx_pred, cy_pred) = (int(ratio_w*(target[0] + target[2] / 2)), int(ratio_h*(target[1] + target[3] / 2)))
-                #logging.info("id: {} timestamp: {}, (x, y): ({}, {})".format(fid, timestamp, cx_pred, cy_pred))
-                if (not isBlacklist(self.blacklist, cx_pred, cy_pred)):
-                    point = Point(fid=fid, timestamp=timestamp, visibility=1, x=cx_pred, y=cy_pred, z=0, event=0, speed=0)
+                (cx_pred, cy_pred) = (
+                    int(ratio_w * (target[0] + target[2] / 2)),
+                    int(ratio_h * (target[1] + target[3] / 2)),
+                )
+                # logging.info("id: {} timestamp: {}, (x, y): ({}, {})".format(fid, timestamp, cx_pred, cy_pred))
+                if not isBlacklist(self.blacklist, cx_pred, cy_pred):
+                    point = Point(
+                        fid=fid,
+                        timestamp=timestamp,
+                        visibility=1,
+                        x=cx_pred,
+                        y=cy_pred,
+                        z=0,
+                        event=0,
+                        speed=0,
+                    )
                     insertById(self.points, point)
                 else:
-                    point = Point(fid=fid, timestamp=timestamp, visibility=0, x=0, y=0, z=0, event=0, speed=0)
+                    point = Point(
+                        fid=fid,
+                        timestamp=timestamp,
+                        visibility=0,
+                        x=0,
+                        y=0,
+                        z=0,
+                        event=0,
+                        speed=0,
+                    )
 
             if self.csv_writer is not None:
                 self.csv_writer.writePoints(point)
+            if self.image_dir is not None:
+                out = image.copy()
+                if out.ndim == 2:
+                    out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
+                color = (0, 255, 0) if point.visibility == 1 else (0, 0, 255)
+                cv2.circle(out, (int(point.x), int(point.y)), 5, color, -1)
+                cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
 
         if self.mqttc is not None:
             self.points = removeOutliers(self.points)
@@ -148,7 +203,7 @@ class TrackNetThread:
         self.mqttc.publish(self.output_topic, json.dumps(payload))
 
     def run(self):
-        #logging.debug("TrackNetThread started.")
+        # logging.debug("TrackNetThread started.")
         try:
             self.valid_size = len(self.images)
             if self.valid_size > 0:
@@ -162,19 +217,31 @@ class TrackNetThread:
                 self.prediction()
                 self.execute()
             else:
-                logging.warning("images size {} is not correctly. ".format(len(self.images)))
+                logging.warning(
+                    "images size {} is not correctly. ".format(len(self.images))
+                )
         except Exception as e:
             logging.error(e)
         finally:
             self.isProcessing = False
 
-        #logging.debug("TrackNetThread terminated.")
+        # logging.debug("TrackNetThread terminated.")
+
 
 class TrackNetMqtt(threading.Thread):
-    def __init__(self, nodename, mqttc:mqtt.Client, output_topic:str,
-                 camera_origin_width:int, camera_origin_height:int,
-                 path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+    def __init__(
+        self,
+        nodename,
+        mqttc: mqtt.Client,
+        output_topic: str,
+        camera_origin_width: int,
+        camera_origin_height: int,
+        path: str,
+        weights_filename: str,
+        imgbuf: ImageBuffer,
+        save_csv: bool = True,
+        visualize: bool = False,
+    ):
         """_summary_
 
         Args:
@@ -202,29 +269,37 @@ class TrackNetMqtt(threading.Thread):
         self.output_topic = output_topic
         self.mqttc = mqttc
 
+        replay_dir = path
         # Setup CSV Writer
         if save_csv:
-            path = os.path.join(path, self.nodename+'.csv')
-            self.csv_writer = CSVWriter(name=self.nodename, filename=path)
+            csv_path = os.path.join(replay_dir, self.nodename + ".csv")
+            self.csv_writer = CSVWriter(name=self.nodename, filename=csv_path)
         else:
             self.csv_writer = None
+        if visualize:
+            self.image_dir = os.path.join(replay_dir, "images")
+            os.makedirs(self.image_dir, exist_ok=True)
+        else:
+            self.image_dir = None
 
         self._stopper = threading.Event()
 
     def stop(self):
-        self._stopper.set()  
+        self._stopper.set()
 
     def _stopped(self):
         return self._stopper.is_set()
 
-    def _loadModel(self, weights_filename:str):
+    def _loadModel(self, weights_filename: str):
         ### Track Net Model ###
         model = TrackNet10()
         model.to(self.device)
 
-        weights = f"{ROOTDIR}/LayerSensing/TrackNet/TrackNet10/weights/{weights_filename}"
+        weights = (
+            f"{ROOTDIR}/LayerSensing/TrackNet/TrackNet10/weights/{weights_filename}"
+        )
         checkpoint = torch.load(weights)
-        model.load_state_dict(checkpoint['state_dict'])
+        model.load_state_dict(checkpoint["state_dict"])
         model.eval()
         self.model = model
 
@@ -235,14 +310,17 @@ class TrackNetMqtt(threading.Thread):
         list_timestamps = []
 
         # TrackNet
-        tracknetThread = TrackNetThread(device=self.device,
-                                        model=self.model,
-                                        mqttc=self.mqttc,
-                                        output_topic=self.output_topic,
-                                        blacklist=[],
-                                        output_width=self.camera_origin_width,
-                                        output_height=self.camera_origin_height,
-                                        csv_writer=self.csv_writer)
+        tracknetThread = TrackNetThread(
+            device=self.device,
+            model=self.model,
+            mqttc=self.mqttc,
+            output_topic=self.output_topic,
+            blacklist=[],
+            output_width=self.camera_origin_width,
+            output_height=self.camera_origin_height,
+            csv_writer=self.csv_writer,
+            image_dir=self.image_dir,
+        )
 
         while not self._stopped():
 
@@ -250,7 +328,9 @@ class TrackNetMqtt(threading.Thread):
                 frame = self.imageBuffer.pop(True)
                 if frame.is_eos:
                     if self.mqttc is not None:
-                        self.mqttc.publish(self.output_topic, json.dumps({"linear": [], "EOF": True}))
+                        self.mqttc.publish(
+                            self.output_topic, json.dumps({"linear": [], "EOF": True})
+                        )
                     logging.info(f"{self.nodename} EOF reached.")
                     self.stop()
                     break
