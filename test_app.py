@@ -13,7 +13,7 @@ logging.getLogger().setLevel(logging.INFO)
 
 cfg = loadConfig(f"{ROOTDIR}/config")
 
-mqtt = MqttClient(cfg["Project"]["mqtt_broker"], 1883)
+mqtt = MqttClient(cfg["Project"]["mqtt_broker"], 1885)
 
 camera = RpcCamera("test-0", mqtt.mqttc)
 
