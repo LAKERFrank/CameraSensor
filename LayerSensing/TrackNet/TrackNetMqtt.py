@@ -6,6 +6,7 @@ import logging
 import os
 import threading
 import json
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -64,7 +65,7 @@ class TrackNetThread:
         output_width: int,
         output_height: int,
         csv_writer: CSVWriter,
-        image_dir: str | None = None,
+        image_dir: Optional[str] = None,
     ):
 
         self.images = []
