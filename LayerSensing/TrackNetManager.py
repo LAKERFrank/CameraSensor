@@ -17,9 +17,15 @@ class TrackNetManager:
         self.imageBuffer = imgbuf
         self.tracknetThread = None
 
-    def startTrackNet(self, camera_origin_size: 'tuple[int, int]',
-                      tracknet_ver:str, weights_filename: str,
-                      replay_dirname: str, cam_idx: int):
+    def startTrackNet(
+        self,
+        camera_origin_size: 'tuple[int, int]',
+        tracknet_ver: str,
+        weights_filename: str,
+        replay_dirname: str,
+        cam_idx: int,
+        visualize: bool = False,
+    ):
         """Start Tracknet thread
            會存在 PROJECT_ROOT/replay/{replay_dirname}/TrackNet_{cam_idx}.csv
 
@@ -46,15 +52,31 @@ class TrackNetManager:
             os.makedirs(replay_path, exist_ok=True)
 
             if tracknet_ver == "tracknet_v2":
-                self.tracknetThread \
-                    = TrackNetMqtt(f"TrackNet_{cam_idx}", self.mqttc, tracknet_topic, camera_origin_size[0],
-                                   camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                self.tracknetThread = TrackNetMqtt(
+                    f"TrackNet_{cam_idx}",
+                    self.mqttc,
+                    tracknet_topic,
+                    camera_origin_size[0],
+                    camera_origin_size[1],
+                    replay_path,
+                    weights_filename,
+                    self.imageBuffer,
+                    True,
+                    visualize,
+                )
             elif tracknet_ver == "tracknet_1000":
-                self.tracknetThread \
-                    = TrackNet1000Mqtt(f"TrackNet_{cam_idx}", self.mqttc, tracknet_topic, camera_origin_size[0],
-                                   camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                self.tracknetThread = TrackNet1000Mqtt(
+                    f"TrackNet_{cam_idx}",
+                    self.mqttc,
+                    tracknet_topic,
+                    camera_origin_size[0],
+                    camera_origin_size[1],
+                    replay_path,
+                    weights_filename,
+                    self.imageBuffer,
+                    True,
+                    visualize,
+                )
             else:
                 raise Exception(f"tracknet_ver={tracknet_ver} is not acceptable.")
             self.tracknetThread.start()

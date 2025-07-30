@@ -171,10 +171,19 @@ class TrackNetThread:
         #logging.debug("TrackNetThread terminated.")
 
 class TrackNetMqtt(threading.Thread):
-    def __init__(self, nodename, mqttc:mqtt.Client, output_topic:str,
-                 camera_origin_width:int, camera_origin_height:int,
-                 path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+    def __init__(
+        self,
+        nodename,
+        mqttc: mqtt.Client,
+        output_topic: str,
+        camera_origin_width: int,
+        camera_origin_height: int,
+        path: str,
+        weights_filename: str,
+        imgbuf: ImageBuffer,
+        save_csv: bool = True,
+        visualize: bool = False,
+    ):
         """_summary_
 
         Args:
@@ -186,6 +195,7 @@ class TrackNetMqtt(threading.Thread):
         threading.Thread.__init__(self)
 
         self.imageBuffer = imgbuf
+        self.visualize = visualize
 
         self.camera_origin_width = camera_origin_width
         self.camera_origin_height = camera_origin_height
@@ -202,12 +212,19 @@ class TrackNetMqtt(threading.Thread):
         self.output_topic = output_topic
         self.mqttc = mqttc
 
+        self.base_path = path
         # Setup CSV Writer
         if save_csv:
-            path = os.path.join(path, self.nodename+'.csv')
-            self.csv_writer = CSVWriter(name=self.nodename, filename=path)
+            csv_path = os.path.join(self.base_path, self.nodename + '.csv')
+            self.csv_writer = CSVWriter(name=self.nodename, filename=csv_path)
         else:
             self.csv_writer = None
+
+        if self.visualize:
+            self.image_dir = os.path.join(self.base_path, 'tracknet_images')
+            os.makedirs(self.image_dir, exist_ok=True)
+        else:
+            self.image_dir = None
 
         self._stopper = threading.Event()
 
@@ -269,6 +286,19 @@ class TrackNetMqtt(threading.Thread):
             tracknetThread.timestamps = list_timestamps.copy()
             tracknetThread.run()
 
+            if self.image_dir:
+                point_dict = {p.fid: p for p in tracknetThread.points}
+                for img, fid in zip(list_images, list_fids):
+                    if fid == -1:
+                        continue
+                    out = img.copy()
+                    if out.ndim == 2:
+                        out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
+                    p = point_dict.get(fid)
+                    if p and p.visibility:
+                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 255, 0), -1)
+                    cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
+
             list_images.clear()
             list_fids.clear()
             list_timestamps.clear()
@@ -281,6 +311,18 @@ class TrackNetMqtt(threading.Thread):
             tracknetThread.fids = list_fids.copy()
             tracknetThread.timestamps = list_timestamps.copy()
             tracknetThread.run()
+            if self.image_dir:
+                point_dict = {p.fid: p for p in tracknetThread.points}
+                for img, fid in zip(list_images, list_fids):
+                    if fid == -1:
+                        continue
+                    out = img.copy()
+                    if out.ndim == 2:
+                        out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
+                    p = point_dict.get(fid)
+                    if p and p.visibility:
+                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 255, 0), -1)
+                    cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
 
         if self.csv_writer is not None:
             self.csv_writer.close()

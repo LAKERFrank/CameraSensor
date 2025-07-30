@@ -22,10 +22,19 @@ from lib.point import Point, removeOutliers
 from lib.writer import CSVWriter
 
 class TrackNet1000Mqtt(threading.Thread):
-    def __init__(self, nodename, mqttc:mqtt.Client, output_topic:str,
-                 camera_origin_width:int, camera_origin_height:int,
-                 path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+    def __init__(
+        self,
+        nodename,
+        mqttc: mqtt.Client,
+        output_topic: str,
+        camera_origin_width: int,
+        camera_origin_height: int,
+        path: str,
+        weights_filename: str,
+        imgbuf: ImageBuffer,
+        save_csv: bool = True,
+        visualize: bool = False,
+    ):
         """
         初始化 TrackNet1000 MQTT 推論執行緒。
 
@@ -56,11 +65,18 @@ class TrackNet1000Mqtt(threading.Thread):
         # wait for new image
         self.isProcessing = False
 
+        self.visualize = visualize
+
         overrides = {}
         overrides['model'] = model_path
         overrides['mode'] = 'predict_v2'
         overrides['data'] = 'tracknet.yaml'
         overrides['batch'] = 1
+
+        image_dir = os.path.join(path, 'tracknet_images') if visualize else path
+        if visualize:
+            os.makedirs(image_dir, exist_ok=True)
+
         self.predictor = ImageBufferPredictor.ImageBufferPredictor(
             weight=model_path,
             image_buffer=imgbuf,
@@ -69,7 +85,8 @@ class TrackNet1000Mqtt(threading.Thread):
             mqttc=mqttc,
             output_topic=output_topic,
             overrides=overrides,
-            path=path,
+            path=image_dir,
+            save_pred_images=visualize,
         )
 
     def run(self):
