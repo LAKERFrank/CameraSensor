@@ -388,6 +388,6 @@ class ImageBufferPredictor:
 
             center = (int(x), int(y))
             print(f"[Predictor] Drawing point at {center} with confidence {conf:.2f}")
-            cv2.circle(img_vis, center, radius=3, color=color, thickness=-1)
+            cv2.circle(img_vis, center, radius=2, color=color, thickness=-1)
 
         cv2.imwrite(save_path, img_vis)

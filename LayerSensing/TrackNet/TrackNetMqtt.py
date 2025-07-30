@@ -296,7 +296,7 @@ class TrackNetMqtt(threading.Thread):
                         out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
                     p = point_dict.get(fid)
                     if p and p.visibility:
-                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 0, 255), -1)
+                        cv2.circle(out, (int(p.x), int(p.y)), 2, (0, 0, 255), -1)
                     cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
 
             list_images.clear()
@@ -321,7 +321,7 @@ class TrackNetMqtt(threading.Thread):
                         out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
                     p = point_dict.get(fid)
                     if p and p.visibility:
-                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 0, 255), -1)
+                        cv2.circle(out, (int(p.x), int(p.y)), 2, (0, 0, 255), -1)
                     cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
 
         if self.csv_writer is not None:
