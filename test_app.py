@@ -25,7 +25,7 @@ replay_dirname = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 def startTask(use_tracknet: bool = False, use_pose: bool = False):
     if use_tracknet:
         ret = sensing.startTrackNet(
-            (640, 480),
+            (512, 288),
             "tracknet_v2",
             "no114_30.tar",
             replay_dirname,
