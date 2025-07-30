@@ -55,3 +55,11 @@ class RpcSensing(RemoteProcedureCall):
     def stopPose(self):
         """Stop Pose thread"""
         return self._call_rpc_sync("Pose/stop", timeout=1000)
+
+    def startPoseDatafeeder(self, filepath: str, metapath: str | None = None):
+        return self._call_rpc_sync(
+            "Pose/startDatafeeder", filepath=filepath, metapath=metapath
+        )
+
+    def stopPoseDatafeeder(self):
+        return self._call_rpc_sync("Pose/stopDatafeeder")

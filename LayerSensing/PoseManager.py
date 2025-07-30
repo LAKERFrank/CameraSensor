@@ -1,8 +1,10 @@
 import os
 import paho.mqtt.client as mqtt
+import pandas as pd
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer, Frame
 from LayerSensing.Pose.YOLOPoseMqtt import YOLOPoseMqtt
+from LayerSensing.PoseDatafeeder import PoseDatafeeder
 from lib.common import ROOTDIR
 
 class PoseManager:
@@ -11,6 +13,7 @@ class PoseManager:
         self.mqttc = mqttc
         self.imageBuffer = imgbuf
         self.poseThread = None
+        self.feederThread = None
 
     def startPose(self, weights_filename: str, replay_dirname: str, cam_idx: int,
                   visualize: bool = False):
@@ -45,3 +48,18 @@ class PoseManager:
             return {"status": "stopped " + ("(EOS reached)" if wait_for_eos else "(Force stop)")}
         except Exception as e:
             return {"status": "failure", "message": str(e)}
+
+    def startDatafeeder(self, filepath: str, metapath: str | None = None):
+        """Start a Pose CSV data feeder."""
+        self.feederThread = PoseDatafeeder(self.mqttc, self.deviceName,
+                                           filepath, metapath)
+        self.feederThread.start()
+
+        df = pd.read_csv(filepath)
+        duration = float(df.iloc[-1].Timestamp) - float(df.iloc[0].Timestamp)
+        return duration
+
+    def stopDatafeeder(self):
+        if self.feederThread is not None:
+            self.feederThread.join()
+            self.feederThread = None
