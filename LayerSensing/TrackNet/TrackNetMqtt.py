@@ -289,14 +289,14 @@ class TrackNetMqtt(threading.Thread):
             if self.image_dir:
                 point_dict = {p.fid: p for p in tracknetThread.points}
                 for img, fid in zip(list_images, list_fids):
-                    if fid == -1:
+                    if fid == -1 or fid % 10 != 0:
                         continue
                     out = img.copy()
                     if out.ndim == 2:
                         out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
                     p = point_dict.get(fid)
                     if p and p.visibility:
-                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 255, 0), -1)
+                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 0, 255), -1)
                     cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
 
             list_images.clear()
@@ -314,14 +314,14 @@ class TrackNetMqtt(threading.Thread):
             if self.image_dir:
                 point_dict = {p.fid: p for p in tracknetThread.points}
                 for img, fid in zip(list_images, list_fids):
-                    if fid == -1:
+                    if fid == -1 or fid % 10 != 0:
                         continue
                     out = img.copy()
                     if out.ndim == 2:
                         out = cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
                     p = point_dict.get(fid)
                     if p and p.visibility:
-                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 255, 0), -1)
+                        cv2.circle(out, (int(p.x), int(p.y)), 3, (0, 0, 255), -1)
                     cv2.imwrite(os.path.join(self.image_dir, f"{fid:06d}.jpg"), out)
 
         if self.csv_writer is not None:
