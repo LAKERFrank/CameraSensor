@@ -6,8 +6,6 @@ from typing import Optional
 import pandas as pd
 import paho.mqtt.client as mqtt
 
-from lib.point import Point
-
 class PoseDatafeeder(threading.Thread):
     """Feed pose CSV results via MQTT similar to TrackNet Datafeeder."""
 
@@ -28,27 +26,26 @@ class PoseDatafeeder(threading.Thread):
         start = time.time()
         start_ts = float(df.iloc[0].Timestamp)
 
-        for frame_id, rows in df.groupby('Frame'):
-            payload = {"linear": []}
-            for _, row in rows.iterrows():
-                if self.meta_df is not None and row.Frame in self.meta_df.index:
-                    ts = self.meta_df.loc[row.Frame, 'monotonic_timestamp']
-                else:
-                    ts = row.Timestamp
-                point = Point(
-                    fid=row.Frame,
-                    timestamp=ts,
-                    visibility=1,
-                    x=row['kp1_x'],
-                    y=row['kp1_y'],
-                    z=0,
-                    event=0,
-                    speed=0,
-                )
-                payload['linear'].append(point.toJson())
-            while (time.time() - start) <= (rows.iloc[0].Timestamp - start_ts):
+        for _, row in df.iterrows():
+            if self.meta_df is not None and row.Frame in self.meta_df.index:
+                ts = self.meta_df.loc[row.Frame, 'monotonic_timestamp']
+            else:
+                ts = row.Timestamp
+            payload = {
+                "Frame": int(row.Frame),
+                "bbox_x1": row["bbox_x1"],
+                "bbox_y1": row["bbox_y1"],
+                "bbox_x2": row["bbox_x2"],
+                "bbox_y2": row["bbox_y2"],
+            }
+            for i in range(1, 18):
+                payload[f"kp{i}_x"] = row[f"kp{i}_x"]
+                payload[f"kp{i}_y"] = row[f"kp{i}_y"]
+            payload["Timestamp"] = ts
+
+            while (time.time() - start) <= (row.Timestamp - start_ts):
                 time.sleep(0.01)
             self.mqttc.publish(pose_topic, json.dumps(payload))
 
-        self.mqttc.publish(pose_topic, json.dumps({"linear": [], "EOF": True}))
+        self.mqttc.publish(pose_topic, json.dumps({"EOF": True}))
         print(f"{pose_topic}: EOF")
