@@ -21,7 +21,8 @@ class PoseDatafeeder(threading.Thread):
         pose_topic = f"/DATA/{self.deviceName}/LayerSensing/Pose"
         df = pd.read_csv(self.filepath)
         if self.metapath:
-            self.meta_df = pd.read_csv(self.metapath)
+            # index the meta csv by frame so lookups by frame id are O(1)
+            self.meta_df = pd.read_csv(self.metapath, index_col=0)
         start = time.time()
         start_ts = float(df.iloc[0].Timestamp)
 
