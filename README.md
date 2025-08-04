@@ -29,6 +29,17 @@ make run-camera
 make run-device-monitor-daemon
 ```
 
+## Pose data feeder scripts
+
+Publish pose CSV results over MQTT:
+
+```bash
+python3 ./Tools/pose_datafeeder_receive.py --device 1
+python3 ./Tools/pose_datafeeder_send.py --device 1 --csv /workspaces/CameraSensor/replay/2025-07-31_16-54-02/Pose_0.csv
+```
+
+Run the receiver before starting the sender.
+
 ## Notice
 
 1. 有插新相機的話需要重開

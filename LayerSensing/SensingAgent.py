@@ -44,3 +44,5 @@ class SensingLayerAgent(MqttAgent):
         super()._add_func_callback(self.tracknetManager.stopDatafeeder, "TrackNet/stopDatafeeder")
         super()._add_func_callback(self.poseManager.startPose, "Pose/start")
         super()._add_func_callback(self.poseManager.stopPose, "Pose/stop")
+        super()._add_func_callback(self.poseManager.startDatafeeder, "Pose/startDatafeeder")
+        super()._add_func_callback(self.poseManager.stopDatafeeder, "Pose/stopDatafeeder")
