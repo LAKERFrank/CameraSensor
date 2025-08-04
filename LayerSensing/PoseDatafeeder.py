@@ -32,7 +32,8 @@ class PoseDatafeeder(threading.Thread):
             else:
                 ts = row.Timestamp
             payload = {
-                "Frame": int(row.Frame),
+                "id": int(row.Frame),
+                "timestamp": ts,
                 "bbox_x1": row["bbox_x1"],
                 "bbox_y1": row["bbox_y1"],
                 "bbox_x2": row["bbox_x2"],
@@ -41,7 +42,6 @@ class PoseDatafeeder(threading.Thread):
             for i in range(1, 18):
                 payload[f"kp{i}_x"] = row[f"kp{i}_x"]
                 payload[f"kp{i}_y"] = row[f"kp{i}_y"]
-            payload["Timestamp"] = ts
 
             while (time.time() - start) <= (row.Timestamp - start_ts):
                 time.sleep(0.01)
