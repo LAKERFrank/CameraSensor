@@ -1,6 +1,8 @@
 import threading
 import json
 import time
+from typing import Optional
+
 import pandas as pd
 import paho.mqtt.client as mqtt
 
@@ -9,7 +11,7 @@ from lib.point import Point
 class PoseDatafeeder(threading.Thread):
     """Feed pose CSV results via MQTT similar to TrackNet Datafeeder."""
 
-    def __init__(self, mqttc: mqtt.Client, device_name: str, filepath: str, metapath: str | None = None):
+    def __init__(self, mqttc: mqtt.Client, device_name: str, filepath: str, metapath: Optional[str] = None):
         super().__init__()
         self.mqttc = mqttc
         self.deviceName = device_name

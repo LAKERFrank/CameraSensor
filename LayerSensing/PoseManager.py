@@ -1,4 +1,6 @@
 import os
+from typing import Optional
+
 import paho.mqtt.client as mqtt
 import pandas as pd
 
@@ -49,7 +51,7 @@ class PoseManager:
         except Exception as e:
             return {"status": "failure", "message": str(e)}
 
-    def startDatafeeder(self, filepath: str, metapath: str | None = None):
+    def startDatafeeder(self, filepath: str, metapath: Optional[str] = None):
         """Start a Pose CSV data feeder."""
         self.feederThread = PoseDatafeeder(self.mqttc, self.deviceName,
                                            filepath, metapath)

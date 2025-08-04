@@ -1,3 +1,5 @@
+from typing import Optional
+
 from lib.Rpc import RemoteProcedureCall
 
 class RpcSensing(RemoteProcedureCall):
@@ -56,7 +58,7 @@ class RpcSensing(RemoteProcedureCall):
         """Stop Pose thread"""
         return self._call_rpc_sync("Pose/stop", timeout=1000)
 
-    def startPoseDatafeeder(self, filepath: str, metapath: str | None = None):
+    def startPoseDatafeeder(self, filepath: str, metapath: Optional[str] = None):
         return self._call_rpc_sync(
             "Pose/startDatafeeder", filepath=filepath, metapath=metapath
         )
