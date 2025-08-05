@@ -9,12 +9,21 @@ class FrameDistributor(threading.Thread):
     """
 
     def __init__(self, src_buf: ImageBuffer, tracknet_buf: ImageBuffer,
-                 pose_buf: ImageBuffer, pose_interval: int = 4):
+                 pose_buf: ImageBuffer, pose_fps: int = 30, src_fps: int = 120):
+        """Initialize distributor with target pose FPS.
+
+        Args:
+            src_buf (ImageBuffer): Source frames.
+            tracknet_buf (ImageBuffer): Destination buffer for TrackNet.
+            pose_buf (ImageBuffer): Destination buffer for Pose.
+            pose_fps (int, optional): Desired pose frames per second, e.g. 120, 60, 40, 30, 20.
+            src_fps (int, optional): Source camera FPS. Defaults to 120.
+        """
         super().__init__()
         self.src_buf = src_buf
         self.tracknet_buf = tracknet_buf
         self.pose_buf = pose_buf
-        self.pose_interval = pose_interval
+        self.pose_interval = max(1, src_fps // pose_fps)
         self._stopper = threading.Event()
 
     def stop(self):
