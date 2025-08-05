@@ -8,7 +8,14 @@ from LayerSensing.PoseManager import PoseManager
 from LayerSensing.FrameDistributor import FrameDistributor
 
 class SensingLayerAgent(MqttAgent):
-    def __init__(self, device_name:str, imgbuf: ImageBuffer):
+    def __init__(self, device_name:str, imgbuf: ImageBuffer, pose_fps: int = 30):
+        """Initialize sensing layer with configurable pose frame rate.
+
+        Args:
+            device_name (str): Device identifier.
+            imgbuf (ImageBuffer): Source image buffer from camera.
+            pose_fps (int, optional): Target FPS for pose estimation. Valid values: 120, 60, 40, 30, 20.
+        """
         super().__init__(device_name, "SensingLayer")
 
         # create internal buffers for tracknet and pose
@@ -16,11 +23,10 @@ class SensingLayerAgent(MqttAgent):
         self._tracknet_buf = ImageBuffer()
         self._pose_buf = ImageBuffer()
         # distribute frames from the camera to TrackNet and Pose
-        # Pose only receives every 4th frame
         self._distributor = FrameDistributor(self._src_buf,
                                              self._tracknet_buf,
                                              self._pose_buf,
-                                             pose_interval=4)
+                                             pose_fps=pose_fps)
 
         self.tracknetManager = TrackNetManager(device_name, self.mqttc, self._tracknet_buf)
         self.poseManager = PoseManager(device_name, self.mqttc, self._pose_buf)
