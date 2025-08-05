@@ -12,8 +12,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("name", help="host name")
     parser.add_argument("serial", help="camera serial")
-    parser.add_argument("--pose-fps", type=int, default=30,
-                        help="pose estimation FPS, options: 120, 60, 40, 30, 20")
+    parser.add_argument(
+        "pose_fps",
+        type=int,
+        nargs="?",
+        default=30,
+        help="pose estimation FPS, options: 120, 60, 40, 30, 20",
+    )
     args = parser.parse_args()
 
     # loading project config
