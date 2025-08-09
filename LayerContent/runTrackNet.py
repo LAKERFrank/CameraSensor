@@ -16,8 +16,9 @@ from LayerContent.Rpc_content import RpcContent
 
 
 def main():
-    broker_ip = '140.113.213.131'
-    mqtt = MqttClient(broker_ip, 1884)
+    # broker_ip = '140.113.213.131'
+    broker_ip = '140.113.208.125'
+    mqtt = MqttClient(broker_ip, 1885)
 
     args = parse_args()
 

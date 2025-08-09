@@ -26,6 +26,12 @@ make run-camera
 make run-device-monitor-daemon
 ```
 
+* Pose Data Feeder
+
+```bash
+bash Tools/pose_datafeeder.sh 1 /workspaces/CameraSensor/replay/2025-07-31_16-54-02/Pose_0.csv
+```
+
 ## Notice
 
 1. 有插新相機的話需要重開
@@ -72,4 +78,4 @@ python LayerCamera/camera/RpcCamera.py
 	* apt source using `free.nchc.org.tw` for faster speed
 	* add psutil to `requirements.txt`
 * v1.3
-	* add pyqtgraph to `requirements.txt`
+* add pyqtgraph to `requirements.txt`

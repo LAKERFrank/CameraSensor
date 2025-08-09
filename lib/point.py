@@ -200,9 +200,9 @@ def removeOutliers(points: list) -> list:
         
         # Remove outlier by checking if the dis between the point and the center is less than the radius * 2.5
         outlier_idx = [i for i, d in enumerate(dist) if d > radius * 2]
-        # print(f'remove_idx: {outlier_idx}')
-        print(f'remove 2D idx')
-        print(outlier_idx)
+        print(f'remove_idx: {outlier_idx}')
+        # print(f'remove 2D idx')
+        # print(outlier_idx)
         clean_p = []
         for i in range(num_p):
             if i not in outlier_idx:

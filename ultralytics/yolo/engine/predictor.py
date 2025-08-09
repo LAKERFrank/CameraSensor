@@ -132,7 +132,12 @@ class BasePredictor:
         not_tensor = not isinstance(im, torch.Tensor)
         if not_tensor:
             im = np.stack(self.pre_transform(im))
-            im = im[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW, (n, 3, h, w)
+            if im.ndim == 3:
+                im = im[:, None, :, :]
+            elif im.shape[-1] == 1:
+                im = im.transpose((0, 3, 1, 2))
+            else:
+                im = im[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW, (n, 3, h, w)
             im = np.ascontiguousarray(im)  # contiguous
             im = torch.from_numpy(im)
 
@@ -251,13 +256,18 @@ class BasePredictor:
             shuffle=False,
             num_workers=0,
             pin_memory=True,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         self.seen, self.windows, self.batch, profilers = 0, [], None, (ops.Profile(), ops.Profile(), ops.Profile())
         self.run_callbacks('on_predict_start')
         for batch in dataloader:
             self.run_callbacks('on_predict_batch_start')
             self.batch = batch
-            path, im0s, vid_cap, s, fids, timestamps = batch
+            path, im0s, vid_cap, s, *meta = batch
+            if len(meta) == 2:
+                fids, timestamps = meta
+            else:
+                fids, timestamps = None, None
 
             # Preprocess
             with profilers[0]:
@@ -269,11 +279,14 @@ class BasePredictor:
 
             # Postprocess
             with profilers[2]:
-                self.results = self.postprocess(preds, im, im0s, fids, timestamps)
+                if fids is None:
+                    self.results = self.postprocess(preds, im, im0s)
+                else:
+                    self.results = self.postprocess(preds, im, im0s, fids, timestamps)
             self.run_callbacks('on_predict_postprocess_end')
 
             # Visualize, save, write results
-            n = im0s.shape[1]
+            n = im0s.shape[1] if hasattr(im0s, 'shape') else len(im0s)
             for i in range(n):
                 self.seen += 1
                 self.results[i].speed = {
@@ -341,6 +354,7 @@ class BasePredictor:
             num_workers=8,
             pin_memory=True,
             prefetch_factor=8,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         num_streams = 10
         streams = [torch.cuda.Stream() for _ in range(num_streams)]
@@ -425,7 +439,8 @@ class BasePredictor:
                 new_pending = []
                 for p in pending:
                     if p["event"].query():
-                        n = p["im0s"].shape[1]
+                        im0s_pending = p["im0s"]
+                        n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                         pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                         infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                         post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
@@ -483,6 +498,7 @@ class BasePredictor:
             num_workers=8,
             pin_memory=True,
             prefetch_factor=8,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         num_streams = 10
         streams = [torch.cuda.Stream() for _ in range(num_streams)]
@@ -553,7 +569,8 @@ class BasePredictor:
             new_pending = []
             for p in pending:
                 if p["event"].query():
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                     post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
@@ -622,6 +639,7 @@ class BasePredictor:
             num_workers=16,
             pin_memory=True,
             prefetch_factor=16,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
         preprocess_num_streams = 2
         inference_num_streams = 1
@@ -702,7 +720,8 @@ class BasePredictor:
             new_pending = []
             for p in pending:
                 if p["event"].query():
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     path = p["path"]
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
@@ -762,6 +781,7 @@ class BasePredictor:
             pin_memory=True,
             prefetch_factor=None,
             persistent_workers=False,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
 
         num_streams = 6
@@ -795,7 +815,11 @@ class BasePredictor:
                 while not queue.empty() and stream_count < max_pending_batches:
                     i, batch = queue.get_nowait()
                     self.batch = batch
-                    path, im0s, vid_cap, s, fids, timestamps = batch
+                    path, im0s, vid_cap, s, *meta = batch
+                    if len(meta) == 2:
+                        fids, timestamps = meta
+                    else:
+                        fids, timestamps = None, None
                     stream_idx = i % num_streams
                     stream = streams[stream_idx]
 
@@ -818,7 +842,10 @@ class BasePredictor:
                         infer_end.record()
 
                         post_start.record()
-                        results = self.postprocess(preds, im, im0s, fids, timestamps)
+                        if fids is None:
+                            results = self.postprocess(preds, im, im0s)
+                        else:
+                            results = self.postprocess(preds, im, im0s, fids, timestamps)
                         post_end.record()
 
                         end_event.record()
@@ -858,7 +885,8 @@ class BasePredictor:
                         "complete_time": complete_time,
                     })
 
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                     post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])
@@ -924,6 +952,7 @@ class BasePredictor:
             pin_memory=True,
             prefetch_factor=2,
             persistent_workers=True,
+            collate_fn=getattr(self.dataset, 'collate_fn', None),
         )
 
         num_streams = 6
@@ -1026,7 +1055,8 @@ class BasePredictor:
                         "cpu_mem": cpu_mem,
                     })
 
-                    n = p["im0s"].shape[1]
+                    im0s_pending = p["im0s"]
+                    n = im0s_pending.shape[1] if hasattr(im0s_pending, 'shape') else len(im0s_pending)
                     pre_e = p["profiling"]["pre"][0].elapsed_time(p["profiling"]["pre"][1])
                     infer_e = p["profiling"]["infer"][0].elapsed_time(p["profiling"]["infer"][1])
                     post_e = p["profiling"]["post"][0].elapsed_time(p["profiling"]["post"][1])

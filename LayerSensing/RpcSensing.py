@@ -1,3 +1,5 @@
+from typing import Optional
+
 from lib.Rpc import RemoteProcedureCall
 
 class RpcSensing(RemoteProcedureCall):
@@ -6,7 +8,8 @@ class RpcSensing(RemoteProcedureCall):
         
     def startTrackNet(self, camera_origin_size:'tuple[int, int]',
                       tracknet_ver:str, weights_filename:str,
-                      replay_dirname:str, cam_idx: int):
+                      replay_dirname:str, cam_idx: int,
+                      visualize: bool = False):
         """Start Tracknet thread
 
         Args:
@@ -20,12 +23,15 @@ class RpcSensing(RemoteProcedureCall):
             dict: 狀態
         """
 
-        return self._call_rpc_sync("TrackNet/start",
-                                   camera_origin_size = camera_origin_size,
-                                   tracknet_ver=tracknet_ver,
-                                   weights_filename=weights_filename,
-                                   replay_dirname=replay_dirname,
-                                   cam_idx = cam_idx)
+        return self._call_rpc_sync(
+            "TrackNet/start",
+            camera_origin_size=camera_origin_size,
+            tracknet_ver=tracknet_ver,
+            weights_filename=weights_filename,
+            replay_dirname=replay_dirname,
+            cam_idx=cam_idx,
+            visualize=visualize,
+        )
 
     def stopTrackNet(self):
         """Stop Tracknet thread
@@ -40,3 +46,26 @@ class RpcSensing(RemoteProcedureCall):
 
     def stopDatafeeder(self):
         return self._call_rpc_sync("TrackNet/stopDatafeeder")
+
+    def startPose(self, weights_filename: str, replay_dirname: str, cam_idx: int,
+                  visualize: bool = False):
+        """Start Pose thread"""
+        return self._call_rpc_sync(
+            "Pose/start",
+            weights_filename=weights_filename,
+            replay_dirname=replay_dirname,
+            cam_idx=cam_idx,
+            visualize=visualize,
+        )
+
+    def stopPose(self):
+        """Stop Pose thread"""
+        return self._call_rpc_sync("Pose/stop", timeout=1000)
+
+    def startPoseDatafeeder(self, filepath: str, metapath: Optional[str] = None):
+        return self._call_rpc_sync(
+            "Pose/startDatafeeder", filepath=filepath, metapath=metapath
+        )
+
+    def stopPoseDatafeeder(self):
+        return self._call_rpc_sync("Pose/stopDatafeeder")

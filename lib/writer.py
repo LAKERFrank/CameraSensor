@@ -25,6 +25,74 @@ class CSVWriter():
         df.to_csv(self.filename, mode='w+', index=False)
 
     def close_sortByTime(self):
+        """Close CSV file and sort rows by frame number."""
+        self.csvfile.flush()
+        self.csvfile.close()
+
+        df = pd.read_csv(self.filename)
+        df = df.sort_values(by=["Frame"])
+        df.to_csv(self.filename, mode='w+', index=False)
+
+    def writePoints(self, points):
+        """Write :class:`~lib.point.Point` objects to the CSV."""
+        if isinstance(points, Point):
+            self.writer.writerow([
+                points.fid,
+                points.visibility,
+                points.x,
+                points.y,
+                points.z,
+                points.event,
+                points.timestamp,
+            ])
+        elif isinstance(points, list):
+            for p in points:
+                self.writer.writerow([
+                    p.fid,
+                    p.visibility,
+                    p.x,
+                    p.y,
+                    p.z,
+                    p.event,
+                    p.timestamp,
+                ])
+
+        self.csvfile.flush()
+
+    def setEventByTimestamp(self, event, timestamp):
+        """Update the ``Event`` column for rows matching ``timestamp``."""
+        df = pd.read_csv(self.filename)
+        df.loc[df["Timestamp"] == timestamp, "Event"] = event
+
+        df.to_csv(self.filename, mode='w+', index=False)
+
+
+class PoseCSVWriter:
+    """CSV writer for pose results."""
+
+    def __init__(self, filename: str):
+        self.filename = filename
+        self.csvfile = open(filename, 'w', newline='')
+        self.writer = csv.writer(self.csvfile)
+        header = ['Frame', 'bbox_x1', 'bbox_y1', 'bbox_x2', 'bbox_y2']
+        for i in range(17):
+            header += [f'kp{i+1}_x', f'kp{i+1}_y']
+        header += ['Timestamp']
+        self.writer.writerow(header)
+
+    def write_row(self, frame_id: int, bbox: list, kpts: list, timestamp: float):
+        row = [frame_id] + bbox
+        for kp in kpts:
+            row += [kp[0], kp[1]]
+        row.append(timestamp)
+        self.writer.writerow(row)
+        self.csvfile.flush()
+
+    def close(self):
+        self.csvfile.flush()
+        self.csvfile.close()
+
+    def close_sortByTime(self):
         self.csvfile.flush()
         self.csvfile.close()
 

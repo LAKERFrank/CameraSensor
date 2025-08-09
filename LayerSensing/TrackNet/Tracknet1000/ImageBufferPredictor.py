@@ -309,7 +309,7 @@ class ImageBufferPredictor:
                     if self.save_pred_images:
                         pred_local.append(real_result)
             
-            if self.save_pred_images:
+            if self.save_pred_images and fid % 10 == 0:
                 img = self._frame_cache.get(fid)
                 self.save_image_with_points(pred_local, img, f"{self.save_dir}/{fid}.png")
 
@@ -384,13 +384,10 @@ class ImageBufferPredictor:
             img_vis = cv2.cvtColor(img_vis, cv2.COLOR_GRAY2BGR)
 
         for x, y, conf in points:
-            if conf < 0.5:
-                color = (0, 0, 255)  # 紅色，低信心
-            else:
-                color = (0, 255, 0)  # 綠色，正常
+            color = (0, 0, 255)
 
             center = (int(x), int(y))
             print(f"[Predictor] Drawing point at {center} with confidence {conf:.2f}")
-            cv2.circle(img_vis, center, radius=3, color=color, thickness=-1)
+            cv2.circle(img_vis, center, radius=2, color=color, thickness=-1)
 
         cv2.imwrite(save_path, img_vis)
