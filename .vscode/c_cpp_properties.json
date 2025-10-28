@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/include/gstreamer-1.0",
+                "/usr/include/orc-0.4",
+                "/usr/include/glib-2.0",
+                "/usr/include/x86_64-linux-gnu",
+                "/usr/include/",
+                "/usr/include/gobject-introspection-1.0",
+                "/usr/lib/x86_64-linux-gnu/glib-2.0/include",
+                "/home/nol/miniconda3/include/python3.8",
+                "/home/nol/miniconda3/lib/python3.8/site-packages/pybind11/include",
+                "/usr/include/opencv4",
+                "/usr/include/eigen3"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

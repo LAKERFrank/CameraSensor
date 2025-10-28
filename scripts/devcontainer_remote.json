@@ -1,0 +1,35 @@
+{
+	"name": "Ubuntu",
+	"image": "gitlab.nol.cs.nycu.edu.tw:5050/marvin/camerasensor/camera-sensor:v1.3",
+	"runArgs": [
+		"--privileged",
+		"--gpus", "all",
+		"--shm-size=8g",
+		"-e", "NVIDIA_DRIVER_CAPABILITIES=all",
+		"--add-host=host.docker.internal:host-gateway",
+		"-v", "/run/udev:/run/udev"
+	],
+	"containerEnv": {
+		"PYTHONPATH": "${containerWorkspaceFolder}"
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"eamodio.gitlens",
+				"ms-vscode.cpptools-extension-pack",
+				"njpwerner.autodocstring"
+			]
+		}
+	},
+	"features": {
+		"ghcr.io/dd360870/xfce4-desktop/desktop:latest": {
+			"password": "noPassword"
+		}
+	},
+	"forwardPorts": [
+		5901,
+		6080
+	],
+	"postStartCommand": "nohup bash -c 'mosquitto &' > /tmp/nohup.out 2>&1"
+}

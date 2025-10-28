@@ -1,0 +1,1 @@
+python3 /workspaces/camerasensor/LayerSensing/TrackNet/TrackNet10/SensingAgent.py --nodename TrackNet_1 --weights_filename no114_30.tar --cam_idx cam_0 --testVideo /workspaces/camerasensor/replay/2024-10-17_00-00-19/CameraReader_1.mp4 

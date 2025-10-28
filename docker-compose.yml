@@ -1,0 +1,124 @@
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:1.6
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile-services
+    ports:
+      - 1885:1883
+      # - "123:123/udp"
+    volumes:
+      - ./conf/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+  app:
+    image: gitlab.nol.cs.nycu.edu.tw:5050/marvin/camerasensor/camera-sensor:v1.3
+    privileged: true
+    shm_size: '8gb'
+    environment:
+      DISPLAY: ${DISPLAY}
+      NVIDIA_DRIVER_CAPABILITIES: all
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /app
+    command: python3 main_app.py
+    depends_on:
+      content-agent:
+        condition: service_healthy
+    extra_hosts:
+     - "host.docker.internal:host-gateway"
+  content-agent:
+    image: gitlab.nol.cs.nycu.edu.tw:5050/marvin/camerasensor/camera-sensor:v1.3
+    working_dir: /workspaces/camerasensor
+    volumes:
+      - ./:/workspaces/camerasensor
+    environment:
+      PYTHONPATH: /workspaces/camerasensor
+      PYTHONUNBUFFERED: 1
+    command: python3 LayerContent/ContentAgent.py
+    healthcheck:
+      test: ["CMD", "python3", "scripts/healthcheck.py", "ContentDevice", "ContentLayer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    extra_hosts:
+     - "host.docker.internal:host-gateway"
+  camera-agent:
+    image: gitlab.nol.cs.nycu.edu.tw:5050/marvin/camerasensor/camera-sensor:v1.3
+    privileged: true
+    shm_size: '8gb'
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - /dev/v4l:/dev/v4l
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+      NVIDIA_DRIVER_CAPABILITIES: all
+    command: python3 /app/LayerCamera/device_monitor_proc.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ['gpu']
+    extra_hosts:
+     - "host.docker.internal:host-gateway"
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio:
+        soft: 80
+        hard: 80
+
+#  camera-agent-0:
+#    image: gitlab.nol.cs.nycu.edu.tw:5050/marvin/camerasensor/camera-sensor:v1.1
+#    privileged: true
+#    shm_size: '8gb'
+#    working_dir: /app
+#    volumes:
+#      - ./:/app
+#      - /run/udev:/run/udev
+#    environment:
+#      PYTHONPATH: /app
+#      PYTHONUNBUFFERED: 1
+#    command: python3 /app/main_device.py cam_1 08324010
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: ['gpu']
+#    healthcheck:
+#      test: ["CMD", "python3", "scripts/healthcheck.py", "cam_1", "CameraLayer"]
+#      interval: 5s
+#      timeout: 5s
+#      retries: 5
+#      start_period: 10s
+#  device-monitor:
+#    image: gitlab.nol.cs.nycu.edu.tw:5050/marvin/camerasensor/camera-sensor:tis_111
+#    privileged: true
+#    restart: unless-stopped
+#    working_dir: /app
+#    volumes:
+#      - ./:/app
+#      - /var/run/docker.sock:/var/run/docker.sock
+#      - /run/udev:/run/udev
+#    group_add:
+#      - 984 #docker group id
+#    environment:
+#      NVIDIA_DRIVER_CAPABILITIES: all
+#      PROJECT_HOST_DIR: ${PWD}
+#      PYTHONPATH: /app
+#    shm_size: '8gb'
+#    command: python3 LayerCamera/device_monitor.py
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: ['gpu']

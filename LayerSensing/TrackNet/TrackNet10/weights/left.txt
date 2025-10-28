@@ -1,0 +1,1 @@
+# black for left camera, DEV_000F314E7513, in EC234

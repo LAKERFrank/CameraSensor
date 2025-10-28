@@ -1,0 +1,48 @@
+stages:
+  - build-image
+  - pages
+
+variables:
+  IMAGE_TAG_DEFAULT: $CI_REGISTRY_IMAGE/camera-sensor:v1.3
+  IMAGE_TAG_APP: $CI_REGISTRY_IMAGE/app:latest
+
+build-image:
+  stage: build-image
+  image: docker:latest
+
+  variables:
+    DOCKER_DRIVER: overlay2
+
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+
+  script:
+    - docker build -t $IMAGE_TAG_DEFAULT .
+    - docker push $IMAGE_TAG_DEFAULT
+    - docker build -t $IMAGE_TAG_APP --file app.dockerfile .
+    - docker push $IMAGE_TAG_APP
+
+  rules:
+    # This ensures that only pushes to the default branch will trigger
+    # a pages deploy
+    #- if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_REF_NAME == "dev_mqtt"
+
+pages:
+  stage: pages
+  needs: ["build-image"]
+  image: $CI_REGISTRY_IMAGE/camera-sensor:v1.3
+  # Functions that should be executed before the build script is run
+  before_script:
+    - pip install sphinx
+  script:
+    - sphinx-build -b html ./docs ./public
+  artifacts:
+    paths:
+      # The folder that contains the files to be exposed at the Page URL
+      - public
+  rules:
+    # This ensures that only pushes to the default branch will trigger
+    # a pages deploy
+    #- if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_REF_NAME == "dev_mqtt"

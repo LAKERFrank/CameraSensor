@@ -1,0 +1,62 @@
+# Compiled Object files, Static and Shared libraries (e.g., *.o, *.a, *.so)
+*.o
+*.a
+#*.so
+camera
+
+# Compiled Dynamic libraries
+*.dll
+*.dylib
+
+# Qt build files
+Makefile
+*.pro.user
+*.qmake.stash
+*.pro.user.*
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# Qt Creator files
+*.autosave
+*.user
+*.autosave
+*.opensdf
+*.user.*
+
+# GStreamer build files
+*.plugins
+*.bins
+
+# Generated files
+Makefile
+Makefile.Release
+Makefile.Debug
+videoplayer
+
+# Compiled files
+debug/
+release/
+
+# Temporary files
+*.log
+*.bak
+*.log.*
+*.orig
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+CMakeScripts/
+CMakeSettings.json
+CTestTestfile.cmake
+
+# VSCode related files
+.vscode/
+
+*.mp4
+*.jpg
+/gst_debug/
+/snapshots/
+
+__pycache__

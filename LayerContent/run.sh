@@ -1,0 +1,1 @@
+python3 Model3D_realtime.py --camera_cfgs /workspaces/camerasensor/replay/r_2024-10-23_20-50-38/08324005.cfg /workspaces/camerasensor/replay/r_2024-10-23_20-50-38/08324010.cfg --save_path /workspaces/camerasensor/replay/r_2024-10-23_20-50-38

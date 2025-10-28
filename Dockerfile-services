@@ -1,0 +1,8 @@
+FROM eclipse-mosquitto:1.6
+
+RUN apk add --no-cache chrony tzdata
+
+COPY ntp_assets/startup.sh /opt/startup.sh
+RUN chmod +x /opt/startup.sh
+
+CMD ["/bin/sh", "-c", "/opt/startup.sh && mosquitto -c /mosquitto/config/mosquitto.conf"]
