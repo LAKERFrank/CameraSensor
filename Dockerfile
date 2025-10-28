@@ -80,7 +80,9 @@ ENV PATH="/home/${USERNAME}/miniconda3/bin/:$PATH"
 
 COPY requirements.txt /home/${USERNAME}/requirements.txt
 
+RUN pip3 install --upgrade pip
 RUN pip3 install -r ~/requirements.txt
+RUN pip3 install --no-cache-dir --extra-index-url https://pypi.ngc.nvidia.com nvidia-tensorrt
 
 # Fix: ImportError: /home/nol/miniconda3/bin/../lib/libstdc++.so.6: version `GLIBCXX_3.4.30' not found (required by /workspaces/camerasensor/LayerCamera/CameraSystemC/recorder_module.cpython-38-x86_64-linux-gnu.so)
 RUN conda install -c conda-forge -y libstdcxx-ng=12
