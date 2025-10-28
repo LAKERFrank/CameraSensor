@@ -28,6 +28,7 @@ tensorboard
 torch
 torchvision
 torchaudio
+cuda-python
 scikit-video
 llvmlite
 opencv-python==4.2.0.34
