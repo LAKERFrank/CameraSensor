@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 
-from LayerSensing.TrackNetManager import TrackNetManager
+from LayerSensing.SensingManager import SensingManager
 from lib.common import ROOTDIR
 from LayerApplication.utils.Mqtt import MqttClient
 from lib.MqttAgent import MqttAgent
@@ -23,9 +23,9 @@ def main():
     if len(args.camera_idxs) != len(args.camera_device):
         raise ValueError("The number of camera indices must match the number of camera devices.")
 
-    tracknet_managers = {}
+    sensing_managers = {}
     for idx, device in zip(args.camera_idxs, args.camera_device):
-        tracknet_managers[idx] = TrackNetManager(device, mqtt_agent.data_handler, mqtt.mqttc, None)
+        sensing_managers[idx] = SensingManager(device, mqtt_agent.data_handler, mqtt.mqttc, None)
 
     threads = []
 
@@ -57,14 +57,14 @@ def main():
         if videopath == None:
             print('No TrackNet file')
         else:
-            tracknet_managers[idx].startDatafeeder(
+            sensing_managers[idx].startDatafeeder(
                 videopath,
                 metapath,
                 posepath,
             )
 
     for idx in args.camera_idxs:
-        tracknet_managers[idx].stopDatafeeder()
+        sensing_managers[idx].stopDatafeeder()
 
     time.sleep(1)
 
