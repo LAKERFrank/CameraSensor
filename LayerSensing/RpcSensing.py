@@ -58,3 +58,26 @@ class RpcSensing(RemoteProcedureCall):
     def stopDatafeeder(self):
         prefix = getattr(self, "_datafeeder_prefix", "TrackNet")
         return self._call_rpc_sync(f"{prefix}/stopDatafeeder")
+
+    def startPose(
+        self,
+        engine_filename: str,
+        cam_idx: int,
+        *,
+        input_size: int = 640,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.65,
+        max_det: int = 100,
+    ):
+        return self._call_rpc_sync(
+            "Pose/start",
+            engine_filename=engine_filename,
+            cam_idx=cam_idx,
+            input_size=input_size,
+            conf_threshold=conf_threshold,
+            iou_threshold=iou_threshold,
+            max_det=max_det,
+        )
+
+    def stopPose(self, wait_for_eos: bool = True):
+        return self._call_rpc_sync("Pose/stop", wait_for_eos=wait_for_eos, timeout=1000)

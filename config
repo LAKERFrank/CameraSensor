@@ -152,3 +152,10 @@ output_topic = 3d_track
 output_event_topic = events
 wait_time = 3
 
+[Pose]
+engine =
+input_size = 640
+conf_threshold = 0.25
+iou_threshold = 0.65
+max_det = 100
+

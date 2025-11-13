@@ -91,6 +91,33 @@ class TensorRTPoseEngine:
         self._input_dtype = np.dtype(self._trt.nptype(self._engine.get_binding_dtype(self._input_index)))
         self._output_dtype = np.dtype(self._trt.nptype(self._engine.get_binding_dtype(self._output_index)))
 
+        # Cache calibration ranges so that INT8 engines can be quantized/dequantized properly.
+        self._input_dynamic_range = self._engine.get_dynamic_range(self._input_index)
+        self._output_dynamic_range = self._engine.get_dynamic_range(self._output_index)
+        self._normalize_inputs = True
+        self._center_inputs = False
+        self._input_quant_scale = None
+        if self._input_dtype == np.int8:
+            if self._input_dynamic_range is None:
+                raise RuntimeError(
+                    "Quantized pose engine is missing calibration ranges for the input binding."
+                )
+            input_min, input_max = self._input_dynamic_range
+            if input_min is None or input_max is None:
+                raise RuntimeError(
+                    "Quantized pose engine returned invalid calibration ranges for the input binding."
+                )
+            # Determine whether the original preprocessing normalized to [0, 1].
+            # Most YOLOv8 exports do, in which case the calibration max will be close to 1.
+            self._normalize_inputs = input_max <= 2.0
+            # When calibration uses symmetric ranges (e.g. [-1, 1]) we must center the inputs.
+            self._center_inputs = input_min < 0.0
+            # Convert calibration range to a quantization scale.
+            denom = max(abs(input_min), abs(input_max))
+            if denom == 0:
+                raise RuntimeError("Quantized pose engine reported zero dynamic range for the input binding.")
+            self._input_quant_scale = 127.0 / denom
+
         if warmup:
             LOGGER.debug("Running TensorRT pose warmup inference")
             dummy = np.zeros((1, *self.input_shape), dtype=self._input_dtype)
@@ -171,10 +198,13 @@ class TensorRTPoseEngine:
 
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         resized, scale, (pad_x, pad_y) = self._letterbox(image_rgb, (target_h, target_w))
-        tensor = resized.astype(self._input_dtype)
-        if self._input_dtype in (np.float16, np.float32):
-            tensor = tensor / np.array(255.0, dtype=self._input_dtype)
+        tensor = resized.astype(np.float32)
+        if self._normalize_inputs:
+            tensor /= 255.0
+        if self._center_inputs:
+            tensor = tensor * 2.0 - 1.0
         tensor = np.ascontiguousarray(tensor.transpose(2, 0, 1)[None, ...])
+        tensor = self._convert_input_dtype(tensor)
         return tensor, {
             "scale": scale,
             "pad_x": pad_x,
@@ -255,7 +285,8 @@ class TensorRTPoseEngine:
         )
         self._cudart.cudaStreamSynchronize(self._stream)
 
-        return self._host_mem[self._output_index].reshape(self._host_shape[self._output_index])
+        output = self._host_mem[self._output_index].reshape(self._host_shape[self._output_index])
+        return self._convert_output_dtype(output)
 
     # ------------------------------------------------------------------
     def _postprocess(self, raw_output: np.ndarray, meta: Dict[str, float]) -> List[PoseDetection]:
@@ -319,6 +350,47 @@ class TensorRTPoseEngine:
                 )
             )
         return detections
+
+    # ------------------------------------------------------------------
+    def _convert_input_dtype(self, tensor: np.ndarray) -> np.ndarray:
+        if self._input_dtype in (np.float32, np.float16):
+            return tensor.astype(self._input_dtype)
+
+        if self._input_dtype == np.int8:
+            if self._input_quant_scale is None:
+                raise RuntimeError("Quantized pose engine was not initialised correctly")
+            quantized = np.clip(np.round(tensor * self._input_quant_scale), -128, 127)
+            return quantized.astype(np.int8)
+
+        raise NotImplementedError(
+            f"Unsupported pose engine input dtype: {self._input_dtype!r}."
+        )
+
+    # ------------------------------------------------------------------
+    def _convert_output_dtype(self, tensor: np.ndarray) -> np.ndarray:
+        if tensor.dtype == np.float32:
+            return tensor
+        if tensor.dtype == np.float16:
+            return tensor.astype(np.float32)
+        if tensor.dtype == np.int8:
+            if self._output_dynamic_range is None:
+                raise RuntimeError(
+                    "Quantized pose engine is missing calibration ranges for the output binding."
+                )
+            output_min, output_max = self._output_dynamic_range
+            if output_min is None or output_max is None:
+                raise RuntimeError(
+                    "Quantized pose engine returned invalid calibration ranges for the output binding."
+                )
+            denom = max(abs(output_min), abs(output_max))
+            if denom == 0:
+                raise RuntimeError("Quantized pose engine reported zero dynamic range for the output binding.")
+            scale = denom / 127.0
+            return tensor.astype(np.float32) * scale
+
+        raise NotImplementedError(
+            f"Unsupported pose engine output dtype: {tensor.dtype!r}."
+        )
 
 
 __all__ = ["TensorRTPoseEngine", "PoseDetection", "PoseInferenceResult"]
