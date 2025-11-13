@@ -47,8 +47,6 @@ class ExampleAPP():
 
         self.mqttc.subscribe(f"/DATA/cam_0/SensingLayer/TrackNet")
         self.mqttc.subscribe(f"/DATA/cam_1/SensingLayer/TrackNet")
-        self.mqttc.subscribe(f"/DATA/cam_0/SensingLayer/Pose")
-        self.mqttc.subscribe(f"/DATA/cam_1/SensingLayer/Pose")
                
         # if self.has_explored:
         #     self.subscribeLayers()

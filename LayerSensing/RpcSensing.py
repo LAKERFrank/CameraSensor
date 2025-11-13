@@ -35,8 +35,22 @@ class RpcSensing(RemoteProcedureCall):
         """
         return self._call_rpc_sync("TrackNet/stop", timeout=1000)
 
-    def startDatafeeder(self, filepath):
-        return self._call_rpc_sync("TrackNet/startDatafeeder", filepath=filepath)
+    def startDatafeeder(
+        self,
+        filepath,
+        metapath=None,
+        posepath=None,
+        *,
+        pose_playback_speed: float = 1.0,
+    ):
+        payload = {"filepath": filepath}
+        if metapath is not None:
+            payload["metapath"] = metapath
+        if posepath is not None:
+            payload["posepath"] = posepath
+        if pose_playback_speed != 1.0:
+            payload["pose_playback_speed"] = pose_playback_speed
+        return self._call_rpc_sync("TrackNet/startDatafeeder", **payload)
 
     def stopDatafeeder(self):
         return self._call_rpc_sync("TrackNet/stopDatafeeder")

@@ -79,8 +79,22 @@ class TrackNetManager:
         except Exception as e:
             return {"status": "failure", "message": str(e)}
 
-    def startDatafeeder(self, filepath, metapath=None):
-        self.feederThread = Datafeeder(self.mqttc, self.deviceName, filepath, metapath)
+    def startDatafeeder(
+        self,
+        filepath,
+        metapath=None,
+        posepath=None,
+        *,
+        pose_playback_speed: float = 1.0,
+    ):
+        self.feederThread = Datafeeder(
+            self.mqttc,
+            self.deviceName,
+            filepath,
+            metapath,
+            posepath,
+            pose_playback_speed=pose_playback_speed,
+        )
         self.feederThread.start()
 
         df = pd.read_csv(filepath)
@@ -90,3 +104,4 @@ class TrackNetManager:
 
     def stopDatafeeder(self):
         self.feederThread.join()
+        self.feederThread = None

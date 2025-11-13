@@ -24,8 +24,6 @@ class SensingLayerAgent(MqttAgent):
         self.control_handler.register_function(self.tracknetManager.stopDatafeeder, "TrackNet/stopDatafeeder")
         self.control_handler.register_function(self.poseManager.startPose, "Pose/start")
         self.control_handler.register_function(self.poseManager.stopPose, "Pose/stop")
-        self.control_handler.register_function(self.poseManager.startDatafeeder, "Pose/startDatafeeder")
-        self.control_handler.register_function(self.poseManager.stopDatafeeder, "Pose/stopDatafeeder")
 
         # 註冊 Sensing Layer 所發布的資料流的Topic，未來可以透過較短的稱呼(第一個參數)索引到Topic的全稱
         self.data_handler.register_topic("tracknet", "TrackNet")

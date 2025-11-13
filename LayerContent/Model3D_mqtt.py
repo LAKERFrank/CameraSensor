@@ -9,7 +9,6 @@ import sys
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import cv2
@@ -183,8 +182,6 @@ class TriangulationThread(threading.Thread):
 
         # setup TrackNet Receiver
         self.rawTrack2Ds = []
-        self.pose_lock = threading.Lock()
-        self.pose_records = {}
         for in_topic in input_topics:
             print('--------------------------------------------')
             print('in_topic:', in_topic)
@@ -203,11 +200,6 @@ class TriangulationThread(threading.Thread):
             # logging.debug("[{}]: Write 2d csv in {} by topic {}".format(self.nodename, filePath, in_topic))
             self.csv2DWriters.append(CSVWriter(name=in_name, filename=filePath))
             print('--------------------------------------------')
-
-            pose_topic = in_topic.replace('TrackNet', 'Pose')
-            self.pose_records.setdefault(in_name, [])
-            self.data_handler.subscribe(pose_topic, self._make_pose_callback(in_name, pose_topic))
-            logging.debug("[TriangulationThread] Listening pose topic %s", pose_topic)
 
         # Setup MultiCamTriang
         self.multiCamTriang = MultiCamTriang(poses, eye, self.newcameramtx)
@@ -525,8 +517,6 @@ class TriangulationThread(threading.Thread):
             time.sleep(1)
         self.flyEventDetector.close()
 
-        self._export_pose_records()
-
         # Output to CSV
         for w in self.csv2DWriters:
             w.close()
@@ -541,50 +531,6 @@ class TriangulationThread(threading.Thread):
             runFireBall(self.client, self.topic, self.save_path, Track3D, self.fps)
 
         logging.info("TriangulationThread terminated.")
-
-    def _make_pose_callback(self, camera_name, topic):
-        def _handle(payload):
-            if isinstance(payload, dict) and payload.get("EOF"):
-                logging.info("Pose stream EOF on %s", topic)
-                return
-
-            detections = []
-            if isinstance(payload, dict):
-                detections = payload.get("detections", []) or []
-                frame_idx = payload.get("frame_index")
-                logging.debug(
-                    "[PoseReceiver] %s frame=%s detections=%d",
-                    camera_name,
-                    frame_idx,
-                    len(detections),
-                )
-            else:
-                logging.debug("[PoseReceiver] %s payload=%s", camera_name, payload)
-
-            with self.pose_lock:
-                self.pose_records.setdefault(camera_name, []).append(payload)
-
-        return _handle
-
-    def _export_pose_records(self):
-        base_path = Path(self.save_path)
-        with self.pose_lock:
-            pose_items = list(self.pose_records.items())
-
-        for camera_name, records in pose_items:
-            if not records:
-                continue
-            output_path = base_path / f"{camera_name}_pose.jsonl"
-            with output_path.open("w", encoding="utf-8") as fh:
-                for record in records:
-                    fh.write(json.dumps(record))
-                    fh.write("\n")
-            logging.info(
-                "Saved %d pose frames for %s to %s",
-                len(records),
-                camera_name,
-                output_path,
-            )
 
 class MainThread(threading.Thread):
     def __init__(self, client, data_handler, args, settings, ks, poses, eye, dist, newcameramtx, projection_mat, enable_camera_sync=False):
