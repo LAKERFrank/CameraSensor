@@ -20,8 +20,21 @@ class SensingLayerAgent(MqttAgent):
         # 填入的這個function應該要有return，回傳 簡短的單次答案 / API開啟狀態(Status Code, Error Msg).etc
         self.control_handler.register_function(self.tracknetManager.startTrackNet, "TrackNet/start")
         self.control_handler.register_function(self.tracknetManager.stopTrackNet, "TrackNet/stop")
-        self.control_handler.register_function(self.tracknetManager.startDatafeeder, "TrackNet/startDatafeeder")
-        self.control_handler.register_function(self.tracknetManager.stopDatafeeder, "TrackNet/stopDatafeeder")
+        self.control_handler.register_function(
+            self.tracknetManager.startDatafeeder, "TrackNet/startDatafeeder"
+        )
+        self.control_handler.register_function(
+            self.tracknetManager.stopDatafeeder, "TrackNet/stopDatafeeder"
+        )
+        # Mirror the TrackNet datafeeder under the Pose namespace so callers that
+        # expect pose-specific RPC routes can continue to function while the
+        # implementation reuses the shared TrackNet datafeeder thread.
+        self.control_handler.register_function(
+            self.tracknetManager.startDatafeeder, "Pose/startDatafeeder"
+        )
+        self.control_handler.register_function(
+            self.tracknetManager.stopDatafeeder, "Pose/stopDatafeeder"
+        )
         self.control_handler.register_function(self.poseManager.startPose, "Pose/start")
         self.control_handler.register_function(self.poseManager.stopPose, "Pose/stop")
 

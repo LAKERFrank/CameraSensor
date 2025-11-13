@@ -3,6 +3,7 @@ from lib.Rpc import RemoteProcedureCall
 class RpcSensing(RemoteProcedureCall):
     def __init__(self, device_name, mqtt_client):
         super().__init__(device_name, "SensingLayer", mqtt_client)
+        self._datafeeder_prefix = "TrackNet"
         
     def startTrackNet(self, camera_origin_size:'tuple[int, int]',
                       tracknet_ver:str, weights_filename:str,
@@ -50,7 +51,10 @@ class RpcSensing(RemoteProcedureCall):
             payload["posepath"] = posepath
         if pose_playback_speed != 1.0:
             payload["pose_playback_speed"] = pose_playback_speed
-        return self._call_rpc_sync("TrackNet/startDatafeeder", **payload)
+        prefix = "Pose" if posepath is not None else "TrackNet"
+        self._datafeeder_prefix = prefix
+        return self._call_rpc_sync(f"{prefix}/startDatafeeder", **payload)
 
     def stopDatafeeder(self):
-        return self._call_rpc_sync("TrackNet/stopDatafeeder")
+        prefix = getattr(self, "_datafeeder_prefix", "TrackNet")
+        return self._call_rpc_sync(f"{prefix}/stopDatafeeder")
