@@ -8,7 +8,7 @@ def run(cmd, desc):
     return subprocess.Popen(cmd)
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Model3D_mqtt.py and runTrackNet.py with shared parameters.")
+    parser = argparse.ArgumentParser(description="Run Model3D_mqtt.py and runSensing.py with shared parameters.")
     parser.add_argument("--date", default="2025-04-24_16-33-50", help="Date string, e.g., 2025-04-24_16-33-50")
     parser.add_argument("--camera_idxs", nargs='+', default=["0", "1", "2", "3"], help="List of camera indexes, e.g., 0 1 2 3")
     parser.add_argument("--camera_device", nargs='+', default=[
@@ -29,7 +29,7 @@ def main():
     ]
 
     cmd_tracknet = [
-        "python3", "runTrackNet.py",
+        "python3", "runSensing.py",
         "--date", args.date,
         "--camera_idxs", *args.camera_idxs,
         "--camera_device", *args.camera_device
@@ -44,7 +44,7 @@ def main():
         cmd_eval.remove("-v")
 
     p_model3d  = run(cmd_model3d,  "Running Model3D_mqtt.py")
-    p_tracknet = run(cmd_tracknet, "Running runTrackNet.py")
+    p_tracknet = run(cmd_tracknet, "Running runSensing.py")
 
     model3d_ret = p_model3d.wait()
     tracknet_ret = p_tracknet.wait()
@@ -54,7 +54,7 @@ def main():
         if model3d_ret != 0:
             print(f"Model3D_mqtt.py exited with code {model3d_ret}")
         if tracknet_ret != 0:
-            print(f"runTrackNet.py exited with code {tracknet_ret}")
+            print(f"runSensing.py exited with code {tracknet_ret}")
         # sys.exit(1)
 
     if args.eval:

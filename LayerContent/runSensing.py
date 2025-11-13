@@ -1,6 +1,4 @@
 import argparse
-import logging
-import threading
 import os
 import time
 from pathlib import Path
@@ -70,7 +68,7 @@ def main():
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run TrackNet data feeder for multiple cameras.")
+    parser = argparse.ArgumentParser(description="Run sensing data feeder (TrackNet/Pose) for multiple cameras.")
     parser.add_argument("--date", required=True, help="The date directory name (e.g., 2024-09-19_09-33-56).")
     parser.add_argument("--camera_idxs", required=True, nargs='+', type=int, help="List of camera indices (e.g., 1 2 3).")
     parser.add_argument("--camera_device", required=True, nargs='+', help="List of camera device corresponding to the indices (e.g., 39320296 39320299).")
