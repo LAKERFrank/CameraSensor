@@ -1,11 +1,12 @@
 """TensorRT-backed YOLOv8 pose inference utilities."""
 from __future__ import annotations
 
+import importlib
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import cv2
 import numpy as np
@@ -34,6 +35,117 @@ class PoseInferenceResult:
     timings_ms: Dict[str, float]
 
 
+class _CudaRuntime:
+    """Abstraction over cuda-python and PyCUDA runtimes."""
+
+    def __init__(self) -> None:
+        self._backend = None
+        self._cudart = None
+        self._drv = None
+        try:
+            from cuda import cudart  # type: ignore
+
+            self._backend = "cuda-python"
+            self._cudart = cudart
+        except ImportError:
+            try:
+                import pycuda.autoinit  # type: ignore  # noqa: F401 - creates CUDA context
+                import pycuda.driver as drv  # type: ignore
+
+                self._backend = "pycuda"
+                self._drv = drv
+            except ImportError as exc:  # pragma: no cover - hardware dependency
+                raise RuntimeError(
+                    "TensorRT pose engine requires either cuda-python or PyCUDA to be installed."
+                ) from exc
+
+    # ------------------------------------------------------------------
+    def stream_create(self):
+        if self._backend == "cuda-python":
+            status, stream = self._cudart.cudaStreamCreate()
+            if status != 0:  # pragma: no cover - hardware dependency
+                raise RuntimeError(f"cudaStreamCreate failed with status {status}")
+            return stream
+        assert self._backend == "pycuda"
+        return self._drv.Stream()
+
+    # ------------------------------------------------------------------
+    def stream_destroy(self, stream) -> None:
+        if self._backend == "cuda-python":
+            self._cudart.cudaStreamDestroy(stream)
+        elif stream is not None:  # pragma: no branch - cleanup best effort
+            try:
+                stream.synchronize()
+            except Exception:  # pragma: no cover - defensive cleanup
+                pass
+
+
+    # ------------------------------------------------------------------
+    def stream_handle(self, stream) -> int:
+        if self._backend == "cuda-python":
+            return stream
+        assert self._backend == "pycuda"
+        return int(stream.handle)
+
+    # ------------------------------------------------------------------
+    def stream_synchronize(self, stream) -> None:
+        if self._backend == "cuda-python":
+            self._cudart.cudaStreamSynchronize(stream)
+        else:
+            stream.synchronize()
+
+    # ------------------------------------------------------------------
+    def malloc(self, nbytes: int):
+        if self._backend == "cuda-python":
+            status, ptr = self._cudart.cudaMalloc(nbytes)
+            if status != 0:  # pragma: no cover - hardware dependency
+                raise RuntimeError(f"cudaMalloc failed with status {status}")
+            return ptr
+        assert self._backend == "pycuda"
+        return self._drv.mem_alloc(nbytes)
+
+    # ------------------------------------------------------------------
+    def free(self, allocation) -> None:
+        if self._backend == "cuda-python":
+            self._cudart.cudaFree(allocation)
+        else:
+            try:
+                allocation.free()
+            except AttributeError:  # pragma: no cover - defensive cleanup
+                pass
+
+    # ------------------------------------------------------------------
+    def ptr(self, allocation) -> int:
+        if self._backend == "cuda-python":
+            return allocation
+        assert self._backend == "pycuda"
+        return int(allocation)
+
+    # ------------------------------------------------------------------
+    def memcpy_host_to_device(self, allocation, host_array: np.ndarray) -> None:
+        if self._backend == "cuda-python":
+            self._cudart.cudaMemcpy(
+                allocation,
+                host_array.ctypes.data,
+                host_array.nbytes,
+                self._cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+            )
+        else:
+            self._drv.memcpy_htod(allocation, host_array)
+
+    # ------------------------------------------------------------------
+    def memcpy_device_to_host(self, host_array: np.ndarray, allocation) -> None:
+        if self._backend == "cuda-python":
+            self._cudart.cudaMemcpy(
+                host_array.ctypes.data,
+                allocation,
+                host_array.nbytes,
+                self._cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
+            )
+        else:
+            self._drv.memcpy_dtoh(host_array, allocation)
+
+
 class TensorRTPoseEngine:
     """Runs YOLOv8 pose models exported as TensorRT engines."""
 
@@ -60,7 +172,7 @@ class TensorRTPoseEngine:
         self.num_keypoints = num_keypoints
         self.num_classes = num_classes
 
-        self._trt, self._cudart = self._import_runtime()
+        self._trt, self._cuda = self._import_runtime()
         self._runtime = self._trt.Runtime(self._trt.Logger(self._trt.Logger.WARNING))
         with self.engine_path.open("rb") as engine_file:
             self._engine = self._runtime.deserialize_cuda_engine(engine_file.read())
@@ -71,8 +183,9 @@ class TensorRTPoseEngine:
         if self._context is None:
             raise RuntimeError("Failed to create TensorRT execution context")
 
-        _, self._stream = self._cudart.cudaStreamCreate()
-        self._device_mem: Dict[int, int] = {}
+        self._stream = self._cuda.stream_create()
+        self._device_mem: Dict[int, Any] = {}
+        self._device_ptrs: Dict[int, int] = {}
         self._host_mem: Dict[int, np.ndarray] = {}
         self._host_shape: Dict[int, Tuple[int, ...]] = {}
 
@@ -126,32 +239,34 @@ class TensorRTPoseEngine:
     # ---------------------------------------------------------------------
     @staticmethod
     def _import_runtime():
-        try:
-            import tensorrt as trt  # type: ignore
-        except ImportError as exc:  # pragma: no cover - hardware dependency
+        trt_module = None
+        trt_error: Exception | None = None
+        for module_name in ("tensorrt", "tensorrt_bindings"):
+            try:
+                trt_module = importlib.import_module(module_name)
+                break
+            except ImportError as exc:  # pragma: no cover - hardware dependency
+                trt_error = exc
+        if trt_module is None:
             raise RuntimeError(
-                "TensorRT Python bindings are required to use the quantized pose engine. "
+                "TensorRT Python bindings are required to use the pose engine. "
                 "Install them via `pip install --index-url https://pypi.ngc.nvidia.com nvidia-tensorrt`."
-            ) from exc
+            ) from trt_error
 
-        try:
-            from cuda import cudart  # type: ignore
-        except ImportError as exc:  # pragma: no cover - hardware dependency
-            raise RuntimeError(
-                "cuda-python is required for TensorRT execution. Install it with `pip install cuda-python`."
-            ) from exc
+        cuda_runtime = _CudaRuntime()
 
-        return trt, cudart
+        return trt_module, cuda_runtime
 
     # ------------------------------------------------------------------
     def close(self) -> None:
-        for ptr in self._device_mem.values():  # pragma: no cover - hardware dependency
-            self._cudart.cudaFree(ptr)
+        for allocation in self._device_mem.values():  # pragma: no cover - hardware dependency
+            self._cuda.free(allocation)
         self._device_mem.clear()
+        self._device_ptrs.clear()
         self._host_mem.clear()
         self._host_shape.clear()
         if getattr(self, "_stream", None) is not None:
-            self._cudart.cudaStreamDestroy(self._stream)
+            self._cuda.stream_destroy(self._stream)
             self._stream = None
         self._context = None
         self._engine = None
@@ -244,11 +359,13 @@ class TensorRTPoseEngine:
             return
 
         if index in self._device_mem:
-            self._cudart.cudaFree(self._device_mem[index])
+            self._cuda.free(self._device_mem[index])
+            self._device_ptrs.pop(index, None)
 
         nbytes = size * dtype.itemsize
-        _, device_ptr = self._cudart.cudaMalloc(nbytes)
-        self._device_mem[index] = device_ptr
+        allocation = self._cuda.malloc(nbytes)
+        self._device_mem[index] = allocation
+        self._device_ptrs[index] = self._cuda.ptr(allocation)
         self._host_mem[index] = np.empty(size, dtype=dtype)
         self._host_shape[index] = shape_tuple
 
@@ -259,11 +376,9 @@ class TensorRTPoseEngine:
         self._ensure_allocation(self._input_index, batch_shape, self._input_dtype)
 
         np.copyto(self._host_mem[self._input_index].reshape(batch_shape), input_tensor)
-        self._cudart.cudaMemcpy(
+        self._cuda.memcpy_host_to_device(
             self._device_mem[self._input_index],
-            self._host_mem[self._input_index].ctypes.data,
-            self._host_mem[self._input_index].nbytes,
-            self._cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+            self._host_mem[self._input_index],
         )
 
         output_shape = self._context.get_binding_shape(self._output_index)
@@ -274,16 +389,17 @@ class TensorRTPoseEngine:
         bindings = [0] * self._engine.num_bindings
         for name in self._engine:
             idx = self._engine.get_binding_index(name)
-            bindings[idx] = self._device_mem[idx]
+            bindings[idx] = self._device_ptrs.get(idx, 0)
 
-        self._context.execute_async_v2(bindings=bindings, stream_handle=self._stream)
-        self._cudart.cudaMemcpy(
-            self._host_mem[self._output_index].ctypes.data,
-            self._device_mem[self._output_index],
-            self._host_mem[self._output_index].nbytes,
-            self._cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
+        self._context.execute_async_v2(
+            bindings=bindings,
+            stream_handle=self._cuda.stream_handle(self._stream),
         )
-        self._cudart.cudaStreamSynchronize(self._stream)
+        self._cuda.memcpy_device_to_host(
+            self._host_mem[self._output_index],
+            self._device_mem[self._output_index],
+        )
+        self._cuda.stream_synchronize(self._stream)
 
         output = self._host_mem[self._output_index].reshape(self._host_shape[self._output_index])
         return self._convert_output_dtype(output)
