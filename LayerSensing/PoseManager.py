@@ -11,7 +11,6 @@ from LayerCamera.CameraSystemC.recorder_module import ImageBuffer
 from lib.common import ROOTDIR
 
 from LayerSensing.Pose.pose_mqtt import PoseMqtt
-from LayerSensing.Pose.datafeeder import PoseDatafeeder
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ class PoseManager:
         self.mqtt_client = mqtt_client
         self.image_buffer = imgbuf
         self.pose_thread: Optional[PoseMqtt] = None
-        self.pose_feeder: Optional[PoseDatafeeder] = None
 
     # ------------------------------------------------------------------
     def startPose(
@@ -87,49 +85,6 @@ class PoseManager:
             return {"status": f"stopped {suffix}"}
         except Exception as exc:
             LOGGER.exception("Unable to stop pose worker: %s", exc)
-            return {"status": "failure", "message": str(exc)}
-
-    # ------------------------------------------------------------------
-    def startDatafeeder(self, filepath: str, *, playback_speed: float = 1.0):
-        try:
-            if self.pose_feeder is not None:
-                raise RuntimeError("Pose datafeeder is already running")
-
-            feeder = PoseDatafeeder(
-                self.data_handler,
-                self.device_name,
-                filepath,
-                playback_speed=playback_speed,
-            )
-            self.pose_feeder = feeder
-            feeder.start()
-            LOGGER.info(
-                "Pose datafeeder started using %s (duration: %s s)",
-                filepath,
-                "unknown" if feeder.duration is None else f"{feeder.duration:.2f}",
-            )
-            payload = {"status": "ready", "frames": feeder.entry_count}
-            if feeder.duration is not None:
-                payload["duration"] = feeder.duration
-            return payload
-        except Exception as exc:
-            LOGGER.exception("Unable to start pose datafeeder: %s", exc)
-            self.pose_feeder = None
-            return {"status": "failure", "message": str(exc)}
-
-    # ------------------------------------------------------------------
-    def stopDatafeeder(self):
-        try:
-            if self.pose_feeder is None:
-                raise RuntimeError("Pose datafeeder is not running")
-
-            self.pose_feeder.stop()
-            self.pose_feeder.join()
-            self.pose_feeder = None
-            LOGGER.info("Pose datafeeder stopped")
-            return {"status": "stopped"}
-        except Exception as exc:
-            LOGGER.exception("Unable to stop pose datafeeder: %s", exc)
             return {"status": "failure", "message": str(exc)}
 
 

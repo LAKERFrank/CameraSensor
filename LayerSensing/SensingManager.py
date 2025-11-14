@@ -9,7 +9,7 @@ from LayerSensing.TrackNet.TrackNetMqtt import TrackNetMqtt
 from LayerSensing.Datafeeder import Datafeeder
 from lib.common import ROOTDIR
 
-class TrackNetManager:
+class SensingManager:
     def __init__(self, device_name, data_handler, mqttc:mqtt.Client, imgbuf:ImageBuffer):
 
         self.deviceName = device_name
@@ -17,6 +17,7 @@ class TrackNetManager:
         self.mqttc = mqttc
         self.imageBuffer = imgbuf
         self.tracknetThread = None
+        self.feederThread = None
 
     def startTrackNet(self, camera_origin_size: 'tuple[int, int]',
                       tracknet_ver:str, weights_filename: str,
@@ -79,8 +80,22 @@ class TrackNetManager:
         except Exception as e:
             return {"status": "failure", "message": str(e)}
 
-    def startDatafeeder(self, filepath, metapath=None):
-        self.feederThread = Datafeeder(self.mqttc, self.deviceName, filepath, metapath)
+    def startDatafeeder(
+        self,
+        filepath,
+        metapath=None,
+        posepath=None,
+        *,
+        pose_playback_speed: float = 1.0,
+    ):
+        self.feederThread = Datafeeder(
+            self.mqttc,
+            self.deviceName,
+            filepath,
+            metapath,
+            posepath,
+            pose_playback_speed=pose_playback_speed,
+        )
         self.feederThread.start()
 
         df = pd.read_csv(filepath)
@@ -89,4 +104,7 @@ class TrackNetManager:
         return duration
 
     def stopDatafeeder(self):
+        if self.feederThread is None:
+            raise Exception("No datafeeder is running")
         self.feederThread.join()
+        self.feederThread = None
