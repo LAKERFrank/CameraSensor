@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from LayerCamera.CameraSystemC.recorder_module import Frame, ImageBuffer
 
@@ -34,7 +34,7 @@ class PoseWorker(threading.Thread):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-        fallback_weights: str | None = None,
+        fallback_weights: Optional[str] = None,
     ) -> None:
         super().__init__(daemon=True)
         self.nodename = nodename

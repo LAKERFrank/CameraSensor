@@ -1,3 +1,5 @@
+from typing import Optional
+
 from lib.Rpc import RemoteProcedureCall
 
 class RpcSensing(RemoteProcedureCall):
@@ -68,7 +70,7 @@ class RpcSensing(RemoteProcedureCall):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-        fallback_weights: str | None = None,
+        fallback_weights: Optional[str] = None,
     ):
         return self._call_rpc_sync(
             "Pose/start",

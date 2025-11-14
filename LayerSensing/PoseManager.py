@@ -41,7 +41,7 @@ class PoseManager:
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-        fallback_weights: str | None = None,
+        fallback_weights: Optional[str] = None,
     ):
         try:
             if self.pose_thread is not None:
@@ -52,7 +52,7 @@ class PoseManager:
                 engine_path = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / engine_filename
             engine_path = engine_path.resolve()
 
-            fallback_path: str | None = None
+            fallback_path: Optional[str] = None
             if fallback_weights:
                 candidate = Path(fallback_weights)
                 if not candidate.is_absolute():

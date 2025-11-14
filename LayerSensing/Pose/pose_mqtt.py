@@ -1,7 +1,7 @@
 """Convenience wrapper mirroring the TrackNet MQTT predictor interface."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from LayerCamera.CameraSystemC.recorder_module import ImageBuffer
 
@@ -24,7 +24,7 @@ class PoseMqtt(PoseWorker):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-        fallback_weights: str | None = None,
+        fallback_weights: Optional[str] = None,
     ) -> None:
         super().__init__(
             nodename,

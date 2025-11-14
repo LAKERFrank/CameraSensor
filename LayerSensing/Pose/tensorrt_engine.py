@@ -6,7 +6,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -156,7 +156,7 @@ class TensorRTPoseEngine:
 
     def __init__(
         self,
-        engine_path: Path | str,
+        engine_path: Union[Path, str],
         *,
         input_shape: Tuple[int, int, int] = (3, 640, 640),
         conf_threshold: float = 0.25,
@@ -253,7 +253,7 @@ class TensorRTPoseEngine:
         ]
         tried = []
         trt_module = None
-        trt_error: Exception | None = None
+        trt_error: Optional[Exception] = None
         for module_name in module_candidates:
             try:
                 trt_module = importlib.import_module(module_name)
@@ -548,13 +548,13 @@ class TorchPoseEngine:
 
     def __init__(
         self,
-        weights_path: Path | str,
+        weights_path: Union[Path, str],
         *,
         input_shape: Tuple[int, int, int] = (3, 640, 640),
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-        device: str | None = None,
+        device: Optional[str] = None,
     ) -> None:
         try:
             from ultralytics import YOLO  # type: ignore
