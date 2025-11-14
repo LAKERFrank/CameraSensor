@@ -13,7 +13,7 @@ class TrackNetManager:
     def __init__(self, device_name, data_handler, mqttc:mqtt.Client, imgbuf:ImageBuffer):
 
         self.deviceName = device_name
-        self.data_handler = data_handler        
+        self.data_handler = data_handler
         self.mqttc = mqttc
         self.imageBuffer = imgbuf
         self.tracknetThread = None
