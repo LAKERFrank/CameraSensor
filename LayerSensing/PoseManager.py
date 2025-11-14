@@ -41,6 +41,7 @@ class PoseManager:
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
+        fallback_weights: str | None = None,
     ):
         try:
             if self.pose_thread is not None:
@@ -50,6 +51,16 @@ class PoseManager:
             if not engine_path.is_absolute():
                 engine_path = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / engine_filename
             engine_path = engine_path.resolve()
+
+            fallback_path: str | None = None
+            if fallback_weights:
+                candidate = Path(fallback_weights)
+                if not candidate.is_absolute():
+                    candidate = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / fallback_weights
+                candidate = candidate.resolve()
+                if not candidate.is_file():
+                    raise FileNotFoundError(f"Pose fallback weights not found: {candidate}")
+                fallback_path = str(candidate)
 
             self.pose_thread = PoseMqtt(
                 f"Pose_{cam_idx}",
@@ -62,9 +73,15 @@ class PoseManager:
                 conf_threshold=conf_threshold,
                 iou_threshold=iou_threshold,
                 max_det=max_det,
+                fallback_weights=fallback_path,
             )
             self.pose_thread.start()
-            LOGGER.info("Pose worker started for camera %s using %s", cam_idx, engine_path)
+            LOGGER.info(
+                "Pose worker started for camera %s using %s (fallback=%s)",
+                cam_idx,
+                engine_path,
+                fallback_path or "disabled",
+            )
             return {"status": "ready"}
         except Exception as exc:
             LOGGER.exception("Unable to start pose worker: %s", exc)

@@ -17,6 +17,11 @@ from ultralytics.yolo.utils import ops
 LOGGER = logging.getLogger(__name__)
 
 
+class TensorRTRuntimeUnavailableError(RuntimeError):
+    """Raised when the TensorRT Python runtime cannot be imported."""
+
+
+
 @dataclass
 class PoseDetection:
     """Single pose detection result."""
@@ -239,18 +244,47 @@ class TensorRTPoseEngine:
     # ---------------------------------------------------------------------
     @staticmethod
     def _import_runtime():
+        module_candidates = [
+            "tensorrt",
+            "tensorrt_bindings",
+            "tensorrt_cu12",
+            "tensorrt_cu11",
+            "nvidia.tensorrt",
+        ]
+        tried = []
         trt_module = None
         trt_error: Exception | None = None
-        for module_name in ("tensorrt", "tensorrt_bindings"):
+        for module_name in module_candidates:
             try:
                 trt_module = importlib.import_module(module_name)
                 break
             except ImportError as exc:  # pragma: no cover - hardware dependency
+                tried.append(module_name)
                 trt_error = exc
+
         if trt_module is None:
-            raise RuntimeError(
+            import pkgutil
+
+            dynamic_candidates = [
+                name
+                for name in (m.name for m in pkgutil.iter_modules())
+                if "tensorrt" in name and name not in tried
+            ]
+            for module_name in dynamic_candidates:
+                try:
+                    trt_module = importlib.import_module(module_name)
+                    break
+                except ImportError as exc:  # pragma: no cover - hardware dependency
+                    tried.append(module_name)
+                    trt_error = exc
+
+        if trt_module is None:
+            searched = ", ".join(sorted(set(tried))) or "<none>"
+            raise TensorRTRuntimeUnavailableError(
                 "TensorRT Python bindings are required to use the pose engine. "
-                "Install them via `pip install --index-url https://pypi.ngc.nvidia.com nvidia-tensorrt`."
+                "Install them via `pip install --index-url https://pypi.ngc.nvidia.com nvidia-tensorrt` "
+                "or ensure one of the modules is importable. Searched: "
+                f"{searched}"
             ) from trt_error
 
         cuda_runtime = _CudaRuntime()
@@ -509,4 +543,106 @@ class TensorRTPoseEngine:
         )
 
 
-__all__ = ["TensorRTPoseEngine", "PoseDetection", "PoseInferenceResult"]
+class TorchPoseEngine:
+    """Fallback pose engine using the Ultralytics YOLOv8 PyTorch implementation."""
+
+    def __init__(
+        self,
+        weights_path: Path | str,
+        *,
+        input_shape: Tuple[int, int, int] = (3, 640, 640),
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.65,
+        max_det: int = 100,
+        device: str | None = None,
+    ) -> None:
+        try:
+            from ultralytics import YOLO  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError(
+                "Ultralytics is required for the PyTorch pose fallback. Install it with `pip install ultralytics`."
+            ) from exc
+
+        self.weights_path = Path(weights_path)
+        if not self.weights_path.is_file():
+            raise FileNotFoundError(f"Pose fallback weights not found: {self.weights_path}")
+
+        self.input_shape = input_shape
+        self.conf_threshold = conf_threshold
+        self.iou_threshold = iou_threshold
+        self.max_det = max_det
+
+        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._model = YOLO(str(self.weights_path))
+        try:
+            self._model.to(self._device)
+        except AttributeError:
+            # Older Ultralytics versions keep the device on the predictor, so ignore failures.
+            pass
+
+    # ------------------------------------------------------------------
+    def close(self) -> None:
+        self._model = None  # type: ignore[assignment]
+        if torch.cuda.is_available():  # pragma: no cover - optional GPU cleanup
+            torch.cuda.empty_cache()
+
+    # ------------------------------------------------------------------
+    def predict(self, image: np.ndarray) -> PoseInferenceResult:
+        if image.ndim != 3:
+            raise ValueError("Pose engine expects HxWxC images")
+
+        start = time.perf_counter()
+        results = self._model.predict(
+            source=image,
+            verbose=False,
+            imgsz=self.input_shape[1],
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            max_det=self.max_det,
+            device=self._device,
+        )
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        if not results:
+            return PoseInferenceResult(detections=[], timings_ms={"total_ms": duration_ms})
+
+        prediction = results[0]
+        detections: List[PoseDetection] = []
+        boxes = getattr(prediction, "boxes", None)
+        keypoints = getattr(prediction, "keypoints", None)
+        if boxes is not None and len(boxes):
+            xyxy = boxes.xyxy.cpu().numpy()
+            scores = boxes.conf.cpu().numpy()
+            classes = boxes.cls.cpu().numpy().astype(int)
+            kpts = keypoints.xy.cpu().numpy() if keypoints is not None else None
+            for idx in range(xyxy.shape[0]):
+                det_keypoints: List[List[float]]
+                if kpts is not None:
+                    det_keypoints = kpts[idx].tolist()
+                else:
+                    det_keypoints = []
+                detections.append(
+                    PoseDetection(
+                        bbox=xyxy[idx].tolist(),
+                        score=float(scores[idx]),
+                        class_id=int(classes[idx]),
+                        keypoints=det_keypoints,
+                    )
+                )
+
+        speed = getattr(prediction, "speed", {})
+        timings = {
+            "preprocess_ms": float(speed.get("preprocess", 0.0)),
+            "inference_ms": float(speed.get("inference", 0.0)),
+            "postprocess_ms": float(speed.get("postprocess", 0.0)),
+            "total_ms": duration_ms,
+        }
+        return PoseInferenceResult(detections=detections, timings_ms=timings)
+
+
+__all__ = [
+    "TensorRTRuntimeUnavailableError",
+    "TensorRTPoseEngine",
+    "TorchPoseEngine",
+    "PoseDetection",
+    "PoseInferenceResult",
+]

@@ -45,6 +45,8 @@ def _pose_runtime_kwargs(config):
         kwargs["iou_threshold"] = float(section.get("iou_threshold"))
     if section.get("max_det"):
         kwargs["max_det"] = int(section.get("max_det"))
+    if section.get("fallback_weights"):
+        kwargs["fallback_weights"] = section.get("fallback_weights")
     return kwargs
 
 mqtt = MqttClient(cfg["Project"]["mqtt_broker"], 1883)

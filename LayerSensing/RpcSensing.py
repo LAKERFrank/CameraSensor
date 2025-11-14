@@ -68,6 +68,7 @@ class RpcSensing(RemoteProcedureCall):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
+        fallback_weights: str | None = None,
     ):
         return self._call_rpc_sync(
             "Pose/start",
@@ -77,6 +78,7 @@ class RpcSensing(RemoteProcedureCall):
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
             max_det=max_det,
+            fallback_weights=fallback_weights,
         )
 
     def stopPose(self, wait_for_eos: bool = True):

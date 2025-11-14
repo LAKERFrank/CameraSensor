@@ -8,7 +8,12 @@ from typing import Any, Dict
 
 from LayerCamera.CameraSystemC.recorder_module import Frame, ImageBuffer
 
-from .tensorrt_engine import PoseInferenceResult, TensorRTPoseEngine
+from .tensorrt_engine import (
+    PoseInferenceResult,
+    TensorRTPoseEngine,
+    TensorRTRuntimeUnavailableError,
+    TorchPoseEngine,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +34,7 @@ class PoseWorker(threading.Thread):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
+        fallback_weights: str | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self.nodename = nodename
@@ -36,18 +42,36 @@ class PoseWorker(threading.Thread):
         self.data_handler = data_handler
         self.camera_index = camera_index
         self.stop_event = threading.Event()
+        self.backend = "tensorrt"
 
-        self.engine = TensorRTPoseEngine(
-            engine_path,
-            input_shape=(3, input_size, input_size),
-            conf_threshold=conf_threshold,
-            iou_threshold=iou_threshold,
-            max_det=max_det,
-        )
+        try:
+            self.engine = TensorRTPoseEngine(
+                engine_path,
+                input_shape=(3, input_size, input_size),
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+                max_det=max_det,
+            )
+        except TensorRTRuntimeUnavailableError as exc:
+            if not fallback_weights:
+                raise
+            LOGGER.warning(
+                "TensorRT runtime unavailable (%s); falling back to PyTorch weights %s",
+                exc,
+                fallback_weights,
+            )
+            self.engine = TorchPoseEngine(
+                fallback_weights,
+                input_shape=(3, input_size, input_size),
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+                max_det=max_det,
+            )
+            self.backend = "pytorch"
 
     # ------------------------------------------------------------------
     def run(self) -> None:
-        LOGGER.info("%s pose worker started", self.nodename)
+        LOGGER.info("%s pose worker started using %s backend", self.nodename, self.backend)
         try:
             while not self.stop_event.is_set():
                 frame = self.image_buffer.pop(True)

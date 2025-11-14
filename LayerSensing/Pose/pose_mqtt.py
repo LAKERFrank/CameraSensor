@@ -24,6 +24,7 @@ class PoseMqtt(PoseWorker):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
+        fallback_weights: str | None = None,
     ) -> None:
         super().__init__(
             nodename,
@@ -36,6 +37,7 @@ class PoseMqtt(PoseWorker):
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
             max_det=max_det,
+            fallback_weights=fallback_weights,
         )
 
 

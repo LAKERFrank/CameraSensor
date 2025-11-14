@@ -158,4 +158,5 @@ input_size = 640
 conf_threshold = 0.25
 iou_threshold = 0.65
 max_det = 100
+fallback_weights =
 
