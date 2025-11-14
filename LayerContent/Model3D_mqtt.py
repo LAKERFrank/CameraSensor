@@ -917,7 +917,7 @@ def main():
     # mqtt_agent.start('140.113.208.125', 1884)
 
     mqtt_agent = ContentLayerAgent("ContentDevice")
-    mqtt_agent.start('140.113.208.125', 1884)
+    mqtt_agent.start('localhost', 1883)
 
     
     # Start MainThread
