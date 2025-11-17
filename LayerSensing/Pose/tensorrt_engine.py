@@ -563,9 +563,14 @@ class TorchPoseEngine:
                 "Ultralytics is required for the PyTorch pose fallback. Install it with `pip install ultralytics`."
             ) from exc
 
-        self.weights_path = Path(weights_path)
-        if not self.weights_path.is_file():
-            raise FileNotFoundError(f"Pose fallback weights not found: {self.weights_path}")
+        candidate_path = Path(weights_path)
+        if candidate_path.is_file():
+            self.weights_path: Optional[Path] = candidate_path.resolve()
+            weights_spec = str(self.weights_path)
+        else:
+            # Allow Ultralytics to resolve hub identifiers such as ``yolov8n-pose.pt``.
+            self.weights_path = None
+            weights_spec = str(weights_path)
 
         self.input_shape = input_shape
         self.conf_threshold = conf_threshold
@@ -573,7 +578,7 @@ class TorchPoseEngine:
         self.max_det = max_det
 
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._model = YOLO(str(self.weights_path))
+        self._model = YOLO(weights_spec)
         try:
             self._model.to(self._device)
         except AttributeError:

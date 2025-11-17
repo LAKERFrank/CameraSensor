@@ -52,15 +52,42 @@ class PoseManager:
                 engine_path = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / engine_filename
             engine_path = engine_path.resolve()
 
+            engine_dir = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine"
+
+            def _resolve_fallback(spec: str) -> Optional[str]:
+                """Resolve a fallback weight specification to an absolute path if possible."""
+
+                candidate = Path(spec)
+                if candidate.is_absolute() and candidate.is_file():
+                    return str(candidate.resolve())
+
+                if not candidate.is_absolute():
+                    local_candidate = (engine_dir / candidate).resolve()
+                    if local_candidate.is_file():
+                        return str(local_candidate)
+                    if candidate.is_file():
+                        return str(candidate.resolve())
+
+                # Returning None tells the caller to fall back to the raw spec.
+                return None
+
             fallback_path: Optional[str] = None
             if fallback_weights:
-                candidate = Path(fallback_weights)
-                if not candidate.is_absolute():
-                    candidate = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / fallback_weights
-                candidate = candidate.resolve()
-                if not candidate.is_file():
-                    raise FileNotFoundError(f"Pose fallback weights not found: {candidate}")
-                fallback_path = str(candidate)
+                resolved = _resolve_fallback(fallback_weights)
+                fallback_path = resolved if resolved else fallback_weights
+            else:
+                # Auto-discover local PyTorch weights before falling back to public checkpoints.
+                pt_candidates = sorted(engine_dir.glob("*.pt")) + sorted(engine_dir.glob("*.pth"))
+                if pt_candidates:
+                    fallback_path = str(pt_candidates[0])
+                    LOGGER.info(
+                        "Using pose fallback weights discovered at %s", fallback_path
+                    )
+                else:
+                    fallback_path = "yolov8n-pose.pt"
+                    LOGGER.info(
+                        "No local pose fallback weights found; defaulting to %s", fallback_path
+                    )
 
             self.pose_thread = PoseMqtt(
                 f"Pose_{cam_idx}",

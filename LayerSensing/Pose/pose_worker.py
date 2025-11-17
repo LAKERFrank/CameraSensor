@@ -53,15 +53,21 @@ class PoseWorker(threading.Thread):
                 max_det=max_det,
             )
         except TensorRTRuntimeUnavailableError as exc:
+            fallback_spec = fallback_weights or "yolov8n-pose.pt"
             if not fallback_weights:
-                raise
-            LOGGER.warning(
-                "TensorRT runtime unavailable (%s); falling back to PyTorch weights %s",
-                exc,
-                fallback_weights,
-            )
+                LOGGER.warning(
+                    "TensorRT runtime unavailable (%s); no fallback weights provided, defaulting to %s",
+                    exc,
+                    fallback_spec,
+                )
+            else:
+                LOGGER.warning(
+                    "TensorRT runtime unavailable (%s); falling back to PyTorch weights %s",
+                    exc,
+                    fallback_spec,
+                )
             self.engine = TorchPoseEngine(
-                fallback_weights,
+                fallback_spec,
                 input_shape=(3, input_size, input_size),
                 conf_threshold=conf_threshold,
                 iou_threshold=iou_threshold,
