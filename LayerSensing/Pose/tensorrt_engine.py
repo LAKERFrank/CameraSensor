@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -65,6 +66,7 @@ class TensorRTPoseEngine:
         self._runtime = self._trt.Runtime(self._logger)
         with self.engine_path.open("rb") as engine_file:
             engine_bytes = engine_file.read()
+        self._log_engine_context(engine_bytes)
         self._engine = self._deserialize_engine(engine_bytes)
 
         self._context = self._engine.create_execution_context()
@@ -136,6 +138,8 @@ class TensorRTPoseEngine:
 
     # ------------------------------------------------------------------
     def _deserialize_engine(self, engine_bytes: bytes):
+        if not self._validate_engine_bytes(engine_bytes):
+            raise RuntimeError(self._format_engine_error(None))
         try:
             engine = self._runtime.deserialize_cuda_engine(engine_bytes)
         except Exception as exc:  # pragma: no cover - hardware dependency
@@ -158,6 +162,33 @@ class TensorRTPoseEngine:
         if exc is not None:
             return f"{base} Original exception: {exc}"
         return base
+
+    # ------------------------------------------------------------------
+    def _validate_engine_bytes(self, engine_bytes: bytes) -> bool:
+        if len(engine_bytes) < 1024:  # pragma: no cover - defensive check
+            self._logger.errors.append(
+                f"Engine file is unexpectedly small ({len(engine_bytes)} bytes); it may be incomplete or corrupted."
+            )
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    def _log_engine_context(self, engine_bytes: bytes) -> None:
+        try:
+            stats = self.engine_path.stat()
+            size_mb = stats.st_size / (1024 * 1024)
+            mod_time = datetime.fromtimestamp(stats.st_mtime).isoformat(timespec="seconds")
+            LOGGER.info(
+                "Loading TensorRT pose engine %s (%.2f MB, mtime=%s) with runtime %s",
+                self.engine_path,
+                size_mb,
+                mod_time,
+                self._trt.__version__,
+            )
+        except Exception:  # pragma: no cover - best-effort logging
+            pass
+        if len(engine_bytes) < 1024:  # pragma: no cover - defensive trace
+            LOGGER.warning("TensorRT engine file is only %d bytes; deserialization will likely fail", len(engine_bytes))
 
     # ------------------------------------------------------------------
     def close(self) -> None:
