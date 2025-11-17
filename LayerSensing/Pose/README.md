@@ -18,6 +18,6 @@ To resolve this:
    pip install cuda-python
    ```
 3. Ensure a supported NVIDIA driver/GPU is available. Without GPU support, the quantized TensorRT pose engine cannot run.
-4. Verify the engine file path passed to `startPose` exists (default search: `LayerSensing/Pose/engine/<engine_name>`).
+4. Verify the engine file path passed to `startPose` exists. You can pass just the engine filename if the file is placed under `LayerSensing/Pose/engine/<engine_name>`; otherwise, provide an absolute path.
 
 After installing the dependencies, rerun the pose worker (e.g., `python3 main_device.py ...`) and the error should no longer appear.

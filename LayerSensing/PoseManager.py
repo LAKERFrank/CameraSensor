@@ -50,6 +50,11 @@ class PoseManager:
             if not engine_path.is_absolute():
                 engine_path = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / engine_filename
             engine_path = engine_path.resolve()
+            if not engine_path.is_file():
+                raise FileNotFoundError(
+                    f"Pose engine not found: {engine_path}. "
+                    "Place the engine under LayerSensing/Pose/engine or provide an absolute path."
+                )
 
             self.pose_thread = PoseMqtt(
                 f"Pose_{cam_idx}",
