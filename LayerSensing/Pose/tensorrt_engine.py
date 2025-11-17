@@ -61,11 +61,11 @@ class TensorRTPoseEngine:
         self.num_classes = num_classes
 
         self._trt, self._cudart = self._import_runtime()
-        self._runtime = self._trt.Runtime(self._trt.Logger(self._trt.Logger.WARNING))
+        self._logger = self._create_logger()
+        self._runtime = self._trt.Runtime(self._logger)
         with self.engine_path.open("rb") as engine_file:
-            self._engine = self._runtime.deserialize_cuda_engine(engine_file.read())
-        if self._engine is None:
-            raise RuntimeError(f"Failed to load TensorRT engine: {self.engine_path}")
+            engine_bytes = engine_file.read()
+        self._engine = self._deserialize_engine(engine_bytes)
 
         self._context = self._engine.create_execution_context()
         if self._context is None:
@@ -115,6 +115,49 @@ class TensorRTPoseEngine:
             ) from exc
 
         return trt, cudart
+
+    # ------------------------------------------------------------------
+    def _create_logger(self):
+        trt = self._trt
+
+        class CaptureLogger(trt.ILogger):  # type: ignore[name-defined]
+            def __init__(self):
+                super().__init__()
+                self.errors = []
+
+            def log(self, severity, msg):  # pragma: no cover - hardware dependency
+                text = str(msg)
+                if severity <= self.Severity.WARNING:
+                    LOGGER.warning("TensorRT: %s", text)
+                if severity <= self.Severity.ERROR:
+                    self.errors.append(text)
+
+        return CaptureLogger()
+
+    # ------------------------------------------------------------------
+    def _deserialize_engine(self, engine_bytes: bytes):
+        try:
+            engine = self._runtime.deserialize_cuda_engine(engine_bytes)
+        except Exception as exc:  # pragma: no cover - hardware dependency
+            raise RuntimeError(self._format_engine_error(exc)) from exc
+
+        if engine is None:  # pragma: no cover - hardware dependency
+            raise RuntimeError(self._format_engine_error(None))
+
+        return engine
+
+    # ------------------------------------------------------------------
+    def _format_engine_error(self, exc: Exception | None) -> str:
+        trt_error = "; ".join(self._logger.errors) if getattr(self._logger, "errors", None) else "Unknown TensorRT error"
+        hint = (
+            "TensorRT could not deserialize the engine. This usually means the file is "
+            "corrupted or was built with a different TensorRT version. Rebuild the engine "
+            f"with the same TensorRT version as the runtime ({self._trt.__version__})."
+        )
+        base = f"Failed to load TensorRT engine: {self.engine_path}. TensorRT error: {trt_error}. {hint}"
+        if exc is not None:
+            return f"{base} Original exception: {exc}"
+        return base
 
     # ------------------------------------------------------------------
     def close(self) -> None:
