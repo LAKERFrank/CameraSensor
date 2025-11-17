@@ -29,7 +29,7 @@ torch
 torchvision
 torchaudio
 cuda-python
-nvidia-tensorrt==10.7.0
+tensorrt==10.7.0
 pycuda
 scikit-video
 llvmlite
