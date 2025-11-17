@@ -6,6 +6,9 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
+import cv2
+import numpy as np
+
 from LayerCamera.CameraSystemC.recorder_module import Frame, ImageBuffer
 
 from .tensorrt_engine import (
@@ -87,7 +90,8 @@ class PoseWorker(threading.Thread):
                     LOGGER.info("%s pose worker received EOS", self.nodename)
                     break
                 try:
-                    result = self.engine.predict(frame.image)
+                    image = self._ensure_hwc(frame.image)
+                    result = self.engine.predict(image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
                 except Exception as exc:  # pragma: no cover - defensive logging
@@ -126,6 +130,19 @@ class PoseWorker(threading.Thread):
             "detections": detections,
         }
         return payload
+
+    # ------------------------------------------------------------------
+    def _ensure_hwc(self, image: np.ndarray) -> np.ndarray:
+        """Convert camera frames to HxWxC format expected by the pose engines."""
+
+        if image.ndim == 2:
+            return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+        if image.ndim == 3 and image.shape[0] in (1, 3) and image.shape[2] not in (1, 3):
+            # Likely channel-first input; transpose to channel-last.
+            return np.transpose(image, (1, 2, 0))
+
+        return image
 
 
 __all__ = ["PoseWorker"]
