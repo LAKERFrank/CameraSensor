@@ -138,9 +138,25 @@ class PoseWorker(threading.Thread):
         if image.ndim == 2:
             return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
-        if image.ndim == 3 and image.shape[0] in (1, 3) and image.shape[2] not in (1, 3):
-            # Likely channel-first input; transpose to channel-last.
-            return np.transpose(image, (1, 2, 0))
+        if image.ndim != 3:
+            return image
+
+        # If image is channel-first (CxHxW), transpose to HxWxC. If there are more than 3
+        # channels (e.g., stacked temporal frames), keep only the first 3 to satisfy pose
+        # model expectations.
+        if image.shape[2] not in (1, 3):
+            # Channel-first with many channels (e.g., 10x640x640) or ambiguous shapes where
+            # the first dimension is the smallest -> assume channel-first.
+            if image.shape[0] in (1, 3) or (
+                image.shape[0] < image.shape[1] and image.shape[0] < image.shape[2]
+            ):
+                if image.shape[0] > 3:
+                    image = image[:3]
+                image = np.transpose(image, (1, 2, 0))
+
+        # If still channel-last but with extra channels, trim to the first three.
+        if image.ndim == 3 and image.shape[2] > 3:
+            image = image[:, :, :3]
 
         return image
 
