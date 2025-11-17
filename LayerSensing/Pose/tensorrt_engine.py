@@ -78,20 +78,66 @@ class TensorRTPoseEngine:
         self._host_mem: Dict[int, np.ndarray] = {}
         self._host_shape: Dict[int, Tuple[int, ...]] = {}
 
-        self._input_index = self._engine.get_binding_index(self._engine[0])
-        self._output_indices = [
-            self._engine.get_binding_index(name)
-            for name in self._engine if not self._engine.binding_is_input(name)
-        ]
-        if len(self._output_indices) != 1:
+        # TensorRT 10.x removes the legacy binding APIs. Build a compatibility
+        # layer that works for both the legacy (get_binding_index) and the new
+        # tensor APIs (get_tensor_index / get_tensor_mode).
+        self._binding_names = list(self._engine)
+        self._binding_indices = {name: idx for idx, name in enumerate(self._binding_names)}
+
+        if hasattr(self._engine, "get_binding_index"):
+            self._index_of = self._engine.get_binding_index  # type: ignore[attr-defined]
+            self._is_input = self._engine.binding_is_input  # type: ignore[attr-defined]
+            self._dtype_of = self._engine.get_binding_dtype  # type: ignore[attr-defined]
+            self._shape_of = self._engine.get_binding_shape  # type: ignore[attr-defined]
+            self._num_bindings = getattr(self._engine, "num_bindings", len(self._binding_names))
+            use_tensor_api = False
+        elif hasattr(self._engine, "get_tensor_index"):
+            trt = self._trt
+
+            def _index_of(name: str) -> int:
+                return self._engine.get_tensor_index(name)  # type: ignore[attr-defined]
+
+            def _is_input(name: str) -> bool:
+                mode = self._engine.get_tensor_mode(name)  # type: ignore[attr-defined]
+                return mode == trt.TensorIOMode.INPUT
+
+            def _dtype_of(name: str):
+                return self._engine.get_tensor_dtype(name)  # type: ignore[attr-defined]
+
+            def _shape_of(name: str):
+                return self._engine.get_tensor_shape(name)  # type: ignore[attr-defined]
+
+            self._index_of = _index_of
+            self._is_input = _is_input
+            self._dtype_of = _dtype_of
+            self._shape_of = _shape_of
+            self._num_bindings = getattr(self._engine, "num_io_tensors", len(self._binding_names))
+            use_tensor_api = True
+        else:
+            raise RuntimeError(
+                "TensorRT engine does not expose binding/tensor introspection APIs "
+                "(expected get_binding_index or get_tensor_index)."
+            )
+
+        self._input_names = [name for name in self._binding_names if self._is_input(name)]
+        if not self._input_names:
+            raise RuntimeError("Pose engine exposes no input tensors")
+        self._input_name = self._input_names[0]
+        self._input_index = self._index_of(self._input_name)
+
+        self._output_names = [name for name in self._binding_names if not self._is_input(name)]
+        if len(self._output_names) != 1:
             raise RuntimeError(
                 "Pose engine is expected to expose exactly one output tensor; "
-                f"got {len(self._output_indices)} bindings."
+                f"got {len(self._output_names)} bindings."
             )
-        self._output_index = self._output_indices[0]
+        self._output_name = self._output_names[0]
+        self._output_index = self._index_of(self._output_name)
 
-        self._input_dtype = np.dtype(self._trt.nptype(self._engine.get_binding_dtype(self._input_index)))
-        self._output_dtype = np.dtype(self._trt.nptype(self._engine.get_binding_dtype(self._output_index)))
+        self._input_dtype = np.dtype(self._trt.nptype(self._dtype_of(self._input_name)))
+        self._output_dtype = np.dtype(self._trt.nptype(self._dtype_of(self._output_name)))
+
+        self._use_tensor_api = use_tensor_api
 
         if warmup:
             LOGGER.debug("Running TensorRT pose warmup inference")
@@ -299,7 +345,10 @@ class TensorRTPoseEngine:
     # ------------------------------------------------------------------
     def _run_inference(self, input_tensor: np.ndarray) -> np.ndarray:
         batch_shape = tuple(input_tensor.shape)
-        self._context.set_binding_shape(self._input_index, batch_shape)
+        if self._use_tensor_api and hasattr(self._context, "set_input_shape"):
+            self._context.set_input_shape(self._input_name, batch_shape)
+        else:
+            self._context.set_binding_shape(self._input_index, batch_shape)
         self._ensure_allocation(self._input_index, batch_shape, self._input_dtype)
 
         np.copyto(self._host_mem[self._input_index].reshape(batch_shape), input_tensor)
@@ -310,14 +359,17 @@ class TensorRTPoseEngine:
             self._cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
         )
 
-        output_shape = self._context.get_binding_shape(self._output_index)
+        if self._use_tensor_api and hasattr(self._context, "get_tensor_shape"):
+            output_shape = self._context.get_tensor_shape(self._output_name)
+        else:
+            output_shape = self._context.get_binding_shape(self._output_index)
         if not output_shape:
-            output_shape = self._engine.get_binding_shape(self._output_index)
+            output_shape = self._shape_of(self._output_name)
         self._ensure_allocation(self._output_index, output_shape, self._output_dtype)
 
-        bindings = [0] * self._engine.num_bindings
-        for name in self._engine:
-            idx = self._engine.get_binding_index(name)
+        bindings = [0] * self._num_bindings
+        for name in self._binding_names:
+            idx = self._index_of(name)
             bindings[idx] = self._device_mem[idx]
 
         self._context.execute_async_v2(bindings=bindings, stream_handle=self._stream)
