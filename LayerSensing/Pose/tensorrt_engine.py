@@ -79,9 +79,20 @@ class TensorRTPoseEngine:
         self._host_shape: Dict[int, Tuple[int, ...]] = {}
 
         # TensorRT 10.x removes the legacy binding APIs. Build a compatibility
-        # layer that works for both the legacy (get_binding_index) and the new
-        # tensor APIs (get_tensor_index / get_tensor_mode).
-        self._binding_names = list(self._engine)
+        # layer that works for both the legacy binding APIs (get_binding_*), the
+        # newer tensor APIs (get_tensor_*), and engines that only expose
+        # binding-name accessors (get_binding_name + num_bindings).
+        if hasattr(self._engine, "get_binding_name"):
+            num = int(getattr(self._engine, "num_bindings", 0))
+            self._binding_names = [self._engine.get_binding_name(i) for i in range(num)]  # type: ignore[attr-defined]
+        elif hasattr(self._engine, "get_tensor_name"):
+            num = int(getattr(self._engine, "num_io_tensors", 0))
+            self._binding_names = [self._engine.get_tensor_name(i) for i in range(num)]  # type: ignore[attr-defined]
+        else:
+            try:
+                self._binding_names = list(self._engine)
+            except TypeError:
+                self._binding_names = []
         self._binding_indices = {name: idx for idx, name in enumerate(self._binding_names)}
 
         if hasattr(self._engine, "get_binding_index"):
@@ -113,10 +124,20 @@ class TensorRTPoseEngine:
             self._shape_of = _shape_of
             self._num_bindings = getattr(self._engine, "num_io_tensors", len(self._binding_names))
             use_tensor_api = True
+        elif hasattr(self._engine, "get_binding_name"):
+            # Engines that expose binding names but not index lookups (e.g. TRT
+            # 10.x Python bindings). Build an index map and derive metadata via
+            # the binding_* helpers.
+            self._index_of = lambda name: self._binding_indices[name]
+            self._is_input = self._engine.binding_is_input  # type: ignore[attr-defined]
+            self._dtype_of = self._engine.get_binding_dtype  # type: ignore[attr-defined]
+            self._shape_of = self._engine.get_binding_shape  # type: ignore[attr-defined]
+            self._num_bindings = getattr(self._engine, "num_bindings", len(self._binding_names))
+            use_tensor_api = False
         else:
             raise RuntimeError(
                 "TensorRT engine does not expose binding/tensor introspection APIs "
-                "(expected get_binding_index or get_tensor_index)."
+                "(expected get_binding_index, get_binding_name, or get_tensor_index)."
             )
 
         self._input_names = [name for name in self._binding_names if self._is_input(name)]
