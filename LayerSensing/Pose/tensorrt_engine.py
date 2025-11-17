@@ -149,10 +149,19 @@ class TensorRTPoseEngine:
     def _import_runtime():
         try:
             import tensorrt as trt  # type: ignore
+        except OSError as exc:  # pragma: no cover - hardware dependency
+            raise RuntimeError(
+                "TensorRT runtime libraries could not be loaded. The CUDA/cuDNN shared libraries (e.g. "
+                "libcublas.so.11, libcudnn_ops_infer.so.8) must be installed and compatible with the "
+                "TensorRT version (10.7.0). Install the matching CUDA runtime/cuDNN packages on the host "
+                "or add NVIDIA's runtime wheels (e.g. `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`) "
+                "before launching the pose worker."
+            ) from exc
         except ImportError as exc:  # pragma: no cover - hardware dependency
             raise RuntimeError(
-                "TensorRT Python bindings are required to use the quantized pose engine. "
-                "Install them via `pip install --index-url https://pypi.ngc.nvidia.com nvidia-tensorrt`."
+                "TensorRT Python bindings are required to use the quantized pose engine. Install them with "
+                "`pip install tensorrt==10.7.0` (and ensure compatible CUDA/cuDNN runtime libraries are "
+                "present)."
             ) from exc
 
         try:
