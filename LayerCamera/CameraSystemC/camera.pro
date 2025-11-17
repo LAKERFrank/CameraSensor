@@ -24,9 +24,11 @@ QMAKE_CXXFLAGS += -std=c++20
 QMAKE_LFLAGS +=
 
 # Source files
-SOURCES += main.cpp mainwindow.cpp tcamcamera.cpp recorder.cpp common.cpp modules/record.cpp modules/snapshot.cpp modules/display.cpp modules/udp.cpp modules/loop_record.cpp
+SOURCES += main.cpp mainwindow.cpp tcamcamera.cpp recorder.cpp common.cpp modules/record.cpp modules/snapshot.cpp modules/display.cpp modules/udp.cpp modules/loop_record.cpp \
+    shared_frame_pipeline.cpp
 
 # Header files (if any)
-HEADERS += mainwindow.h tcamcamera.h recorder.h common.h modules/record.h modules/snapshot.h modules/display.h modules/udp.h modules/loop_record.h
+HEADERS += mainwindow.h tcamcamera.h recorder.h common.h modules/record.h modules/snapshot.h modules/display.h modules/udp.h modules/loop_record.h \
+    shared_frame_pipeline.h
 
 
