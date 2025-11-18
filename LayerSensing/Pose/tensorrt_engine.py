@@ -569,8 +569,6 @@ class TensorRTPoseEngine:
             iou_thres=self.iou_threshold,
             max_det=self.max_det,
             nc=self.num_classes,
-            nkpt=self.num_keypoints,
-            kpt_label=True,
             multi_label=False,
             agnostic=False,
         )
