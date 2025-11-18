@@ -482,6 +482,11 @@ class TensorRTPoseEngine:
             idx = self._index_of(name)
             bindings[idx] = self._device_mem[idx]
 
+        # TensorRT 10.x can require explicit tensor address registration even
+        # when execute_async_v3 is used. Set addresses when supported so the
+        # runtime knows where the input/output buffers reside.
+        self._assign_tensor_addresses(bindings)
+
         self._execute(bindings, batch_shape)
         self._cudart.cudaMemcpy(
             self._host_mem[self._output_index].ctypes.data,
@@ -492,6 +497,32 @@ class TensorRTPoseEngine:
         self._cudart.cudaStreamSynchronize(self._stream)
 
         return self._host_mem[self._output_index].reshape(self._host_shape[self._output_index])
+
+    # ------------------------------------------------------------------
+    def _assign_tensor_addresses(self, bindings: List[int]) -> None:
+        """Register device buffer addresses for tensor/binding APIs."""
+
+        # TRT 10.x tensor API (preferred when available).
+        if hasattr(self._context, "set_input_tensor_address") and hasattr(
+            self._context, "set_output_tensor_address"
+        ):
+            for name in self._input_names:
+                idx = self._index_of(name)
+                self._context.set_input_tensor_address(name, bindings[idx])
+            for name in self._output_names:
+                idx = self._index_of(name)
+                self._context.set_output_tensor_address(name, bindings[idx])
+            return
+
+        # Generic tensor address setter.
+        if hasattr(self._context, "set_tensor_address"):
+            for name in self._binding_names:
+                idx = self._index_of(name)
+                self._context.set_tensor_address(name, bindings[idx])
+            return
+
+        # Legacy binding-based APIs rely on the `bindings` list passed into
+        # execute/enqueue, so nothing to do here.
 
     # ------------------------------------------------------------------
     def _execute(self, bindings: List[int], batch_shape: Tuple[int, ...]) -> None:
