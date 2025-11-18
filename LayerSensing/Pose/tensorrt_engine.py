@@ -588,7 +588,31 @@ class TensorRTPoseEngine:
         boxes = det[:, :4]
         scores = det[:, 4]
         classes = det[:, 5].astype(int, copy=False)
-        kpt_array = det[:, 6:].reshape(-1, self.num_keypoints, 3)
+        kpt_values = max(det.shape[1] - 6, 0)
+        available_kpts = kpt_values // 3
+        if kpt_values % 3 != 0:
+            LOGGER.warning(
+                "Pose output has %d leftover keypoint values (expected multiple of 3); dropping extras",
+                kpt_values % 3,
+            )
+
+        if available_kpts == 0:
+            kpt_array = np.zeros((len(det), 0, 3), dtype=det.dtype)
+        else:
+            kpt_array = det[:, 6 : 6 + available_kpts * 3].reshape(-1, available_kpts, 3)
+
+        if available_kpts < self.num_keypoints:
+            padded = np.zeros((len(det), self.num_keypoints, 3), dtype=det.dtype)
+            if available_kpts:
+                padded[:, :available_kpts, :] = kpt_array
+            kpt_array = padded
+        elif available_kpts > self.num_keypoints:
+            LOGGER.warning(
+                "Pose output contains %d keypoints; truncating to configured %d",
+                available_kpts,
+                self.num_keypoints,
+            )
+            kpt_array = kpt_array[:, : self.num_keypoints, :]
 
         boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad_x) / gain
         boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad_y) / gain
