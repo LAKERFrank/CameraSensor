@@ -84,6 +84,7 @@ class TensorRTPoseEngine:
         self._device_mem: Dict[int, int] = {}
         self._host_mem: Dict[int, np.ndarray] = {}
         self._host_shape: Dict[int, Tuple[int, ...]] = {}
+        self._keypoint_warned = False
 
         # TensorRT 10.x removes the legacy binding APIs. Build a compatibility
         # layer that works for both the legacy binding APIs (get_binding_*), the
@@ -595,6 +596,18 @@ class TensorRTPoseEngine:
                 "Pose output has %d leftover keypoint values (expected multiple of 3); dropping extras",
                 kpt_values % 3,
             )
+
+        if available_kpts != self.num_keypoints and not getattr(self, "_keypoint_warned", False):
+            LOGGER.warning(
+                "Pose output keypoint count (%d) differs from configured num_keypoints (%d). The engine may "
+                "have been exported with a different keypoint head; results will be padded/truncated accordingly. "
+                "Output vector length: %d, raw det shape: %s",
+                available_kpts,
+                self.num_keypoints,
+                kpt_values,
+                tuple(det.shape),
+            )
+            self._keypoint_warned = True
 
         if available_kpts == 0:
             kpt_array = np.zeros((len(det), 0, 3), dtype=det.dtype)
