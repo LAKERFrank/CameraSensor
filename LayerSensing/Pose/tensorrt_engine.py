@@ -64,6 +64,7 @@ class TensorRTPoseEngine:
         self._trt, self._cudart = self._import_runtime()
         self._logger = self._create_logger()
         self._runtime = self._trt.Runtime(self._logger)
+        self._ensure_cuda_available()
         with self.engine_path.open("rb") as engine_file:
             engine_bytes = engine_file.read()
         self._log_engine_context(engine_bytes)
@@ -73,7 +74,13 @@ class TensorRTPoseEngine:
         if self._context is None:
             raise RuntimeError("Failed to create TensorRT execution context")
 
-        _, self._stream = self._cudart.cudaStreamCreate()
+        status, stream = self._cudart.cudaStreamCreate()
+        if status != 0:
+            raise RuntimeError(
+                "Failed to create CUDA stream for pose inference. Ensure a CUDA-capable GPU is "
+                "available and not in exclusive/busy mode."
+            )
+        self._stream = stream
         self._device_mem: Dict[int, int] = {}
         self._host_mem: Dict[int, np.ndarray] = {}
         self._host_shape: Dict[int, Tuple[int, ...]] = {}
@@ -225,6 +232,23 @@ class TensorRTPoseEngine:
             raise RuntimeError(self._format_engine_error(None))
 
         return engine
+
+    # ------------------------------------------------------------------
+    def _ensure_cuda_available(self) -> None:
+        """Check that CUDA runtime can see at least one device before use."""
+
+        status, count = self._cudart.cudaGetDeviceCount()
+        if status != 0:
+            raise RuntimeError(
+                "CUDA initialization failed while probing devices (cudaGetDeviceCount). This typically occurs "
+                "when the NVIDIA driver is missing, the device is in exclusive mode, or the container is "
+                "launched without GPU access."
+            )
+        if count <= 0:
+            raise RuntimeError(
+                "No CUDA-capable GPU detected. Connect a compatible GPU and ensure the container has access "
+                "to it before starting the pose worker."
+            )
 
     # ------------------------------------------------------------------
     def _format_engine_error(self, exc: Exception | None) -> str:

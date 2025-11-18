@@ -47,3 +47,5 @@ with a different TensorRT version than the runtime on this device. To fix:
 ## Troubleshooting missing CUDA/cuDNN libraries
 
 If startup fails with errors like `Could not load library libcudnn_ops_infer.so.8` or `libcublas.so.11: cannot open shared object file`, install the CUDA/cuDNN runtime that matches the TensorRT version used to export the engine (10.7.0). Typical fixes include installing the NVIDIA runtime wheels (`pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`) or the corresponding system packages for your CUDA Toolkit version, then restarting the pose worker.
+
+If you instead see CUDA initialization failures (e.g., `cudaGetDeviceCount` errors or messages about GPUs being busy/unavailable), ensure the container is launched with GPU access and no other process is holding the device in exclusive mode. The pose worker will now stop early with a descriptive error when no CUDA-capable GPU is visible.
