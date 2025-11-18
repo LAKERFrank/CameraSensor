@@ -482,7 +482,7 @@ class TensorRTPoseEngine:
             idx = self._index_of(name)
             bindings[idx] = self._device_mem[idx]
 
-        self._context.execute_async_v2(bindings=bindings, stream_handle=self._stream)
+        self._execute(bindings, batch_shape)
         self._cudart.cudaMemcpy(
             self._host_mem[self._output_index].ctypes.data,
             self._device_mem[self._output_index],
@@ -492,6 +492,32 @@ class TensorRTPoseEngine:
         self._cudart.cudaStreamSynchronize(self._stream)
 
         return self._host_mem[self._output_index].reshape(self._host_shape[self._output_index])
+
+    # ------------------------------------------------------------------
+    def _execute(self, bindings: List[int], batch_shape: Tuple[int, ...]) -> None:
+        """Dispatch inference with the first available TensorRT API variant."""
+
+        if hasattr(self._context, "execute_async_v3"):
+            self._context.execute_async_v3(stream_handle=self._stream)
+            return
+
+        if hasattr(self._context, "execute_async_v2"):
+            self._context.execute_async_v2(bindings=bindings, stream_handle=self._stream)
+            return
+
+        if hasattr(self._context, "enqueue_v2"):
+            self._context.enqueue_v2(bindings=bindings, stream_handle=self._stream)
+            return
+
+        if hasattr(self._context, "execute_async"):
+            batch_size = int(batch_shape[0]) if batch_shape else 1
+            self._context.execute_async(batch_size=batch_size, bindings=bindings, stream_handle=self._stream)
+            return
+
+        raise RuntimeError(
+            "TensorRT execution context does not expose an async inference API (expected execute_async_v3, "
+            "execute_async_v2, enqueue_v2, or execute_async)."
+        )
 
     # ------------------------------------------------------------------
     def _postprocess(self, raw_output: np.ndarray, meta: Dict[str, float]) -> List[PoseDetection]:
