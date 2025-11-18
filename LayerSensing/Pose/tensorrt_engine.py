@@ -186,6 +186,8 @@ class TensorRTPoseEngine:
 
         self._use_tensor_api = use_tensor_api
 
+        self._sync_input_shape_from_engine()
+
         if warmup:
             LOGGER.debug("Running TensorRT pose warmup inference")
             dummy = np.zeros((1, *self.input_shape), dtype=self._input_dtype)
@@ -354,16 +356,30 @@ class TensorRTPoseEngine:
 
     # ------------------------------------------------------------------
     def _preprocess(self, image: np.ndarray) -> Tuple[np.ndarray, Dict[str, float]]:
-        if image.ndim != 3 or image.shape[2] != 3:
-            raise ValueError("Pose engine expects color images in HxWx3 format")
+        target_c, target_h, target_w = self.input_shape
+        if image.ndim == 2 and target_c == 1:
+            image_proc = image
+        elif image.ndim == 3 and image.shape[2] == 3:
+            if target_c == 1:
+                image_proc = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                image_proc = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            raise ValueError(
+                "Pose engine expects HxWx3 color images when the engine channel count is 3, "
+                "or grayscale input when the engine channel count is 1."
+            )
 
-        h, w = image.shape[:2]
-        target_h, target_w = self.input_shape[1:]
+        h, w = image_proc.shape[:2]
         if h == 0 or w == 0:
             raise ValueError("Empty image provided to pose engine")
 
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        resized, scale, (pad_x, pad_y) = self._letterbox(image_rgb, (target_h, target_w))
+        color = (114, 114, 114) if target_c == 3 else 0
+        resized, scale, (pad_x, pad_y) = self._letterbox(image_proc, (target_h, target_w), color=color)
+
+        if resized.ndim == 2:
+            resized = resized[..., None]
+
         tensor = resized.astype(self._input_dtype)
         if self._input_dtype in (np.float16, np.float32):
             tensor = tensor / np.array(255.0, dtype=self._input_dtype)
@@ -381,7 +397,7 @@ class TensorRTPoseEngine:
     def _letterbox(
         image: np.ndarray,
         new_shape: Tuple[int, int],
-        color: Tuple[int, int, int] = (114, 114, 114),
+        color: Tuple[int, int, int] | int = (114, 114, 114),
     ) -> Tuple[np.ndarray, float, Tuple[float, float]]:
         shape = image.shape[:2]  # h, w
         if not shape[0] or not shape[1]:
@@ -398,6 +414,27 @@ class TensorRTPoseEngine:
         left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
         padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
         return padded, r, (left, top)
+
+    # ------------------------------------------------------------------
+    def _sync_input_shape_from_engine(self) -> None:
+        try:
+            dims = tuple(int(d) for d in self._shape_of(self._input_name))
+        except Exception:  # pragma: no cover - best effort
+            return
+
+        if len(dims) == 4:
+            spatial = dims[1:]
+        elif len(dims) == 3:
+            spatial = dims
+        else:
+            return
+
+        if any(dim <= 0 for dim in spatial):
+            return
+
+        if self.input_shape != spatial:
+            LOGGER.info("Adjusting pose input_shape from %s to engine-required %s", self.input_shape, spatial)
+            self.input_shape = spatial
 
     # ------------------------------------------------------------------
     def _ensure_allocation(self, index: int, shape: Iterable[int], dtype: np.dtype) -> None:
