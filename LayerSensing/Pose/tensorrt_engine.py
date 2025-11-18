@@ -131,6 +131,25 @@ class TensorRTPoseEngine:
             self._shape_of = _shape_of
             self._num_bindings = getattr(self._engine, "num_io_tensors", len(self._binding_names))
             use_tensor_api = True
+        elif hasattr(self._engine, "get_tensor_name") and hasattr(self._engine, "get_tensor_mode"):
+            trt = self._trt
+
+            def _is_input(name: str) -> bool:
+                mode = self._engine.get_tensor_mode(name)  # type: ignore[attr-defined]
+                return mode == trt.TensorIOMode.INPUT
+
+            def _dtype_of(name: str):
+                return self._engine.get_tensor_dtype(name)  # type: ignore[attr-defined]
+
+            def _shape_of(name: str):
+                return self._engine.get_tensor_shape(name)  # type: ignore[attr-defined]
+
+            self._index_of = lambda name: self._binding_indices[name]
+            self._is_input = _is_input
+            self._dtype_of = _dtype_of
+            self._shape_of = _shape_of
+            self._num_bindings = len(self._binding_names)
+            use_tensor_api = True
         elif hasattr(self._engine, "get_binding_name"):
             # Engines that expose binding names but not index lookups (e.g. TRT
             # 10.x Python bindings). Build an index map and derive metadata via
