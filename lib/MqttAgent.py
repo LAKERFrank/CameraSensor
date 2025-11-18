@@ -4,6 +4,7 @@ import logging
 import json
 import pickle
 import signal
+import textwrap
 
 def _make_logger(layer):
     color_table = {
@@ -180,6 +181,9 @@ class DataHandler():
         self._logger = _make_logger(layer)
         self.DEFAULT_QOS = 0
 
+        self.TRACKNET_COLOR = "\033[94m"
+        self.POSE_COLOR = "\033[93m"
+
         self._pub_topics = {}     # 短名 -> 完整Topic
         self._subs = []          # [(topic_filter, handler, qos)]
 
@@ -212,7 +216,13 @@ class DataHandler():
 
         self.client.publish(topic, bytedata, qos=self.DEFAULT_QOS if qos is None else qos)
         if short_name != "metrics" and short_name != "heartbeat":
-            self._logger(f"Published DATA '{topic}:: {payload}'", "send")
+            formatted, color = self._render_special_log(short_name, payload)
+            if formatted:
+                c = color or ""
+                reset = "\033[0m" if color else ""
+                print(f"{c}[{self.layer}] {formatted}{reset}")
+            else:
+                self._logger(f"Published DATA '{topic}:: {payload}'", "send")
         
     def subscribe(self, topic:str, callback, qos=None):
         
@@ -238,8 +248,84 @@ class DataHandler():
                 callback_func(data)
             except Exception as e:
                 logging.exception(f"Data handler error {e}")
-        
+
         return wrapper
+
+    # ------------------------------------------------------------------
+    def _render_special_log(self, short_name: str, payload):
+        parsed_payload = self._coerce_json(payload)
+        if short_name == "pose" and isinstance(parsed_payload, dict):
+            return self._format_pose_payload(parsed_payload), self.POSE_COLOR
+        if short_name == "tracknet" and isinstance(parsed_payload, dict):
+            return self._format_tracknet_payload(parsed_payload), self.TRACKNET_COLOR
+        return None, None
+
+    def _coerce_json(self, payload):
+        if isinstance(payload, str):
+            try:
+                return json.loads(payload)
+            except Exception:
+                return None
+        if isinstance(payload, (bytes, bytearray, memoryview)):
+            try:
+                return json.loads(bytes(payload).decode("utf-8"))
+            except Exception:
+                return None
+        if isinstance(payload, dict):
+            return payload
+        return None
+
+    def _format_pose_payload(self, payload: dict) -> str:
+        detections = payload.get("detections")
+        if not isinstance(detections, list):
+            return None
+
+        header_parts = [
+            f"camera={payload.get('camera_index', '?')}",
+            f"frame={payload.get('frame_index', '?')}",
+            f"size={payload.get('image_size')}",
+            f"detections={len(detections)}",
+        ]
+
+        timings = payload.get("timings_ms")
+        if isinstance(timings, dict) and timings:
+            timing_str = ", ".join(f"{k}={v}" for k, v in timings.items())
+            header_parts.append(f"timings_ms: {timing_str}")
+
+        lines = [f"[Pose] {' | '.join(header_parts)}"]
+        lines.append(f"Detected people: {len(detections)}")
+        lines.append("Detections:")
+
+        if detections:
+            for idx, det in enumerate(detections, 1):
+                block = json.dumps(det, ensure_ascii=False, indent=2)
+                lines.append(f"  Person {idx}:")
+                lines.append(textwrap.indent(block, "    "))
+        else:
+            lines.append("  (none)")
+
+        return "\n".join(lines)
+
+    def _format_tracknet_payload(self, payload: dict) -> str:
+        linear = payload.get("linear")
+        if linear is None:
+            return None
+
+        eof_flag = payload.get("EOF")
+        header = f"[TrackNet] points={len(linear) if isinstance(linear, list) else 0}"
+        if eof_flag is not None:
+            header += f" | EOF={eof_flag}"
+
+        lines = [header, "Points:"]
+        if isinstance(linear, list) and linear:
+            for idx, point in enumerate(linear, 1):
+                block = json.dumps(point, ensure_ascii=False, indent=2)
+                lines.append(f"  Point {idx}:")
+                lines.append(textwrap.indent(block, "    "))
+        else:
+            lines.append("  (none)")
+
+        return "\n".join(lines)
 
 if __name__ == "__main__":
     camera_layer_server = MqttAgent('camera0', 'CameraLayer')
