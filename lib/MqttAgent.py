@@ -181,6 +181,7 @@ class DataHandler():
         self.DEFAULT_QOS = 0
 
         self.POSE_COLOR = "\033[93m"
+        self.TRACKNET_COLOR = "\033[94m"
 
         self._pub_topics = {}     # 短名 -> 完整Topic
         self._subs = []          # [(topic_filter, handler, qos)]
@@ -220,7 +221,12 @@ class DataHandler():
                 reset = "\033[0m" if color else ""
                 print(f"{c}[{self.layer}] {formatted}{reset}")
             else:
-                self._logger(f"Published DATA '{topic}:: {payload}'", "send")
+                fallback_color = self._default_log_color(short_name)
+                if fallback_color:
+                    reset = "\033[0m"
+                    print(f"{fallback_color}[{self.layer}] Published DATA '{topic}:: {payload}'{reset}")
+                else:
+                    self._logger(f"Published DATA '{topic}:: {payload}'", "send")
         
     def subscribe(self, topic:str, callback, qos=None):
         
@@ -255,6 +261,13 @@ class DataHandler():
         if short_name == "pose" and isinstance(parsed_payload, dict):
             return self._format_pose_payload(parsed_payload), self.POSE_COLOR
         return None, None
+
+    def _default_log_color(self, short_name: str) -> str:
+        if short_name == "pose":
+            return self.POSE_COLOR
+        if short_name == "tracknet":
+            return self.TRACKNET_COLOR
+        return ""
 
     def _coerce_json(self, payload):
         if isinstance(payload, str):
@@ -295,6 +308,8 @@ class DataHandler():
         if detections:
             for idx, det in enumerate(detections, 1):
                 block = json.dumps(det, ensure_ascii=False)
+                if idx > 1:
+                    lines.append("")
                 lines.append(f"  Person {idx}: {block}")
         else:
             lines.append("  (none)")
