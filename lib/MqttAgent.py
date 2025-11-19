@@ -4,7 +4,6 @@ import logging
 import json
 import pickle
 import signal
-import textwrap
 
 def _make_logger(layer):
     color_table = {
@@ -181,7 +180,6 @@ class DataHandler():
         self._logger = _make_logger(layer)
         self.DEFAULT_QOS = 0
 
-        self.TRACKNET_COLOR = "\033[94m"
         self.POSE_COLOR = "\033[93m"
 
         self._pub_topics = {}     # 短名 -> 完整Topic
@@ -256,8 +254,6 @@ class DataHandler():
         parsed_payload = self._coerce_json(payload)
         if short_name == "pose" and isinstance(parsed_payload, dict):
             return self._format_pose_payload(parsed_payload), self.POSE_COLOR
-        if short_name == "tracknet" and isinstance(parsed_payload, dict):
-            return self._format_tracknet_payload(parsed_payload), self.TRACKNET_COLOR
         return None, None
 
     def _coerce_json(self, payload):
@@ -300,27 +296,6 @@ class DataHandler():
             for idx, det in enumerate(detections, 1):
                 block = json.dumps(det, ensure_ascii=False)
                 lines.append(f"  Person {idx}: {block}")
-        else:
-            lines.append("  (none)")
-
-        return "\n".join(lines)
-
-    def _format_tracknet_payload(self, payload: dict) -> str:
-        linear = payload.get("linear")
-        if linear is None:
-            return None
-
-        eof_flag = payload.get("EOF")
-        header = f"[TrackNet] points={len(linear) if isinstance(linear, list) else 0}"
-        if eof_flag is not None:
-            header += f" | EOF={eof_flag}"
-
-        lines = [header, "Points:"]
-        if isinstance(linear, list) and linear:
-            for idx, point in enumerate(linear, 1):
-                block = json.dumps(point, ensure_ascii=False, indent=2)
-                lines.append(f"  Point {idx}:")
-                lines.append(textwrap.indent(block, "    "))
         else:
             lines.append("  (none)")
 
