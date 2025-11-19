@@ -298,9 +298,8 @@ class DataHandler():
 
         if detections:
             for idx, det in enumerate(detections, 1):
-                block = json.dumps(det, ensure_ascii=False, indent=2)
-                lines.append(f"  Person {idx}:")
-                lines.append(textwrap.indent(block, "    "))
+                block = json.dumps(det, ensure_ascii=False)
+                lines.append(f"  Person {idx}: {block}")
         else:
             lines.append("  (none)")
 
