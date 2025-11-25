@@ -216,7 +216,7 @@ class DataHandler():
         self.client.publish(topic, bytedata, qos=self.DEFAULT_QOS if qos is None else qos)
         if short_name != "metrics" and short_name != "heartbeat":
             formatted, color = self._render_special_log(short_name, payload)
-            if formatted:
+            if formatted is not None:
                 c = color or ""
                 reset = "\033[0m" if color else ""
                 print(f"{c}[{self.layer}] {formatted}{reset}")
@@ -224,7 +224,8 @@ class DataHandler():
                 fallback_color = self._default_log_color(short_name)
                 if fallback_color:
                     reset = "\033[0m"
-                    print(f"{fallback_color}[{self.layer}] Published DATA '{topic}:: {payload}'{reset}")
+                    payload_repr = self._payload_repr(payload)
+                    print(f"{fallback_color}[{self.layer}] Published DATA '{topic}:: {payload_repr}'{reset}")
                 else:
                     self._logger(f"Published DATA '{topic}:: {payload}'", "send")
         
@@ -315,6 +316,18 @@ class DataHandler():
             lines.append("  (none)")
 
         return "\n".join(lines)
+
+    def _payload_repr(self, payload):
+        if isinstance(payload, str):
+            return payload if payload else repr(payload)
+        if isinstance(payload, (bytes, bytearray, memoryview)):
+            data = bytes(payload)
+            try:
+                decoded = data.decode("utf-8")
+                return decoded if decoded else repr(data)
+            except Exception:
+                return repr(data)
+        return payload
 
 if __name__ == "__main__":
     camera_layer_server = MqttAgent('camera0', 'CameraLayer')
