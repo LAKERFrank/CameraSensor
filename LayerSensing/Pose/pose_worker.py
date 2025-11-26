@@ -39,7 +39,9 @@ class PoseWorker(threading.Thread):
         self.camera_index = camera_index
         self.stop_event = threading.Event()
         self.target_interval = 1.0 / target_fps if target_fps > 0 else 0.0
-        self._next_publish_ts: float | None = None
+        self._next_publish_ts: float | None = (
+            time.monotonic() + self.target_interval if self.target_interval > 0 else None
+        )
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -55,9 +57,14 @@ class PoseWorker(threading.Thread):
         try:
             while not self.stop_event.is_set():
                 if self.target_interval > 0 and self._next_publish_ts is not None:
-                    remaining = self._next_publish_ts - time.monotonic()
+                    now = time.monotonic()
+                    remaining = self._next_publish_ts - now
                     if remaining > 0:
                         time.sleep(remaining)
+                    elif remaining < -self.target_interval:
+                        # If we're significantly behind (e.g., after a stall), resync the schedule
+                        behind_intervals = int((-remaining) // self.target_interval) + 1
+                        self._next_publish_ts += behind_intervals * self.target_interval
 
                 frame = self.image_buffer.pop(True)
                 if frame is None:
@@ -69,8 +76,12 @@ class PoseWorker(threading.Thread):
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
-                    if self.target_interval > 0:
-                        self._next_publish_ts = time.monotonic() + self.target_interval
+                    if self.target_interval > 0 and self._next_publish_ts is not None:
+                        self._next_publish_ts += self.target_interval
+                        now = time.monotonic()
+                        if now > self._next_publish_ts:
+                            intervals_late = int((now - self._next_publish_ts) // self.target_interval) + 1
+                            self._next_publish_ts += intervals_late * self.target_interval
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.exception("Pose inference failed: %s", exc)
         finally:
