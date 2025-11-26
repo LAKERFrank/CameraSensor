@@ -315,6 +315,8 @@ class DataHandler():
         else:
             lines.append("  (none)")
 
+        lines.append("===================================")
+
         return "\n".join(lines)
 
     def _payload_repr(self, payload):

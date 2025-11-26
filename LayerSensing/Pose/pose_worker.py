@@ -39,7 +39,7 @@ class PoseWorker(threading.Thread):
         self.camera_index = camera_index
         self.stop_event = threading.Event()
         self.target_interval = 1.0 / target_fps if target_fps > 0 else 0.0
-        self._last_publish_ts: float | None = None
+        self._next_publish_ts: float | None = None
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -61,14 +61,16 @@ class PoseWorker(threading.Thread):
                     LOGGER.info("%s pose worker received EOS", self.nodename)
                     break
                 now = time.monotonic()
-                if self.target_interval > 0 and self._last_publish_ts is not None:
-                    if (now - self._last_publish_ts) < self.target_interval:
+                if self.target_interval > 0 and self._next_publish_ts is not None:
+                    if now < self._next_publish_ts:
                         continue
                 try:
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
-                    self._last_publish_ts = now
+                    if self.target_interval > 0:
+                        publish_ts = time.monotonic()
+                        self._next_publish_ts = publish_ts + self.target_interval
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.exception("Pose inference failed: %s", exc)
         finally:
