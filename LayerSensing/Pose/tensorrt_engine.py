@@ -10,7 +10,6 @@ from typing import Dict, Iterable, List, Tuple
 
 import cv2
 import numpy as np
-import torch
 
 from ultralytics.yolo.utils import ops
 
@@ -553,40 +552,43 @@ class TensorRTPoseEngine:
 
     # ------------------------------------------------------------------
     def _postprocess(self, raw_output: np.ndarray, meta: Dict[str, float]) -> List[PoseDetection]:
-        if raw_output.ndim == 2:
-            pred = torch.from_numpy(raw_output[None, ...])
-        elif raw_output.ndim == 3:
-            pred = torch.from_numpy(raw_output)
+        raw = np.asarray(raw_output)
+        cols = 5 + self.num_classes + self.num_keypoints * 3
+        num_classes = self.num_classes
+        if raw.size % cols != 0:
+            num_classes = 0
+            cols = 5 + self.num_keypoints * 3
+
+        if raw.ndim == 3:
+            if raw.shape[1] == cols:
+                pred = raw[0].T
+            elif raw.shape[2] == cols:
+                pred = raw[0]
+            else:
+                pred = raw.reshape(-1, cols)
+        elif raw.ndim == 2:
+            pred = raw.reshape(-1, cols)
         else:
-            raise ValueError(f"Unexpected output shape from TensorRT engine: {raw_output.shape}")
+            raise ValueError(f"Unexpected output shape from TensorRT engine: {raw.shape}")
 
-        if pred.shape[1] < pred.shape[2]:
-            pred = pred.permute(0, 2, 1)
-        pred = pred.float()
+        boxes = pred[:, :4]
+        obj = pred[:, 4]
+        cls = pred[:, 5 : 5 + num_classes] if num_classes else np.ones((pred.shape[0], 1), dtype=pred.dtype)
+        kpts = pred[:, 5 + num_classes :]
 
-        # Ensure confidence/class scores are probabilities even if the engine omits
-        # sigmoid in its output (some exports keep raw logits). This mirrors the
-        # standalone TensorRT script that applies activation before thresholding
-        # so scores remain in the expected 0-1 range.
-        pred_prob = pred.clone()
-        pred_prob[..., 4] = pred_prob[..., 4].sigmoid()
-        if self.num_classes:
-            pred_prob[..., 5 : 5 + self.num_classes] = pred_prob[..., 5 : 5 + self.num_classes].sigmoid()
+        scores = obj * cls.max(axis=1)
+        keep = scores >= self.conf_threshold
+        boxes, scores, kpts, cls = boxes[keep], scores[keep], kpts[keep], cls[keep]
+        if boxes.size == 0:
+            return []
 
-        preds = ops.non_max_suppression(
-            pred_prob,
-            conf_thres=self.conf_threshold,
-            iou_thres=self.iou_threshold,
-            max_det=self.max_det,
-            nc=self.num_classes,
-            multi_label=False,
-            agnostic=False,
-        )
+        boxes = self._xywh2xyxy(boxes)
+        kpts = kpts.reshape(-1, max(kpts.shape[1] // 3, 0), 3)
 
-        detections: List[PoseDetection] = []
-        det = preds[0]
-        if det is None or not len(det):
-            return detections
+        keep_idx = self._nms(boxes, scores, self.iou_threshold)
+        boxes, scores, kpts, cls = boxes[keep_idx], scores[keep_idx], kpts[keep_idx], cls[keep_idx]
+        if boxes.size == 0:
+            return []
 
         gain = meta["scale"]
         pad_x = meta["pad_x"]
@@ -594,59 +596,45 @@ class TensorRTPoseEngine:
         orig_h = meta["orig_h"]
         orig_w = meta["orig_w"]
 
-        det = det.cpu().numpy()
-        boxes = det[:, :4]
-        scores = det[:, 4]
-        classes = det[:, 5].astype(int, copy=False)
-        kpt_values = max(det.shape[1] - 6, 0)
-        available_kpts = kpt_values // 3
-        if kpt_values % 3 != 0:
-            LOGGER.warning(
-                "Pose output has %d leftover keypoint values (expected multiple of 3); dropping extras",
-                kpt_values % 3,
-            )
+        boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad_x) / gain
+        boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad_y) / gain
+        boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, orig_w - 1)
+        boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, orig_h - 1)
 
+        kpts[..., 0] = (kpts[..., 0] - pad_x) / gain
+        kpts[..., 1] = (kpts[..., 1] - pad_y) / gain
+        kpts[..., 0] = kpts[..., 0].clip(0, orig_w - 1)
+        kpts[..., 1] = kpts[..., 1].clip(0, orig_h - 1)
+
+        available_kpts = kpts.shape[1]
         if available_kpts != self.num_keypoints and not getattr(self, "_keypoint_warned", False):
             LOGGER.warning(
                 "Pose output keypoint count (%d) differs from configured num_keypoints (%d). The engine may "
                 "have been exported with a different keypoint head; results will be padded/truncated accordingly. "
-                "Output vector length: %d, raw det shape: %s",
+                "Raw output shape: %s",
                 available_kpts,
                 self.num_keypoints,
-                kpt_values,
-                tuple(det.shape),
+                tuple(raw.shape),
             )
             self._keypoint_warned = True
 
-        if available_kpts == 0:
-            kpt_array = np.zeros((len(det), 0, 3), dtype=det.dtype)
-        else:
-            kpt_array = det[:, 6 : 6 + available_kpts * 3].reshape(-1, available_kpts, 3)
-
         if available_kpts < self.num_keypoints:
-            padded = np.zeros((len(det), self.num_keypoints, 3), dtype=det.dtype)
+            padded = np.zeros((len(kpts), self.num_keypoints, 3), dtype=kpts.dtype)
             if available_kpts:
-                padded[:, :available_kpts, :] = kpt_array
-            kpt_array = padded
+                padded[:, :available_kpts, :] = kpts
+            kpts = padded
         elif available_kpts > self.num_keypoints:
             LOGGER.warning(
                 "Pose output contains %d keypoints; truncating to configured %d",
                 available_kpts,
                 self.num_keypoints,
             )
-            kpt_array = kpt_array[:, : self.num_keypoints, :]
+            kpts = kpts[:, : self.num_keypoints, :]
 
-        boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad_x) / gain
-        boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad_y) / gain
-        boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, orig_w - 1)
-        boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, orig_h - 1)
+        class_ids = cls.argmax(axis=1) if num_classes else np.zeros(len(scores), dtype=int)
 
-        kpt_array[..., 0] = (kpt_array[..., 0] - pad_x) / gain
-        kpt_array[..., 1] = (kpt_array[..., 1] - pad_y) / gain
-        kpt_array[..., 0] = kpt_array[..., 0].clip(0, orig_w - 1)
-        kpt_array[..., 1] = kpt_array[..., 1].clip(0, orig_h - 1)
-
-        for box, score, class_id, keypoints in zip(boxes, scores, classes, kpt_array):
+        detections: List[PoseDetection] = []
+        for box, score, class_id, keypoints in zip(boxes, scores, class_ids, kpts):
             detections.append(
                 PoseDetection(
                     bbox=[float(x) for x in box.tolist()],
@@ -656,6 +644,40 @@ class TensorRTPoseEngine:
                 )
             )
         return detections
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _xywh2xyxy(x: np.ndarray) -> np.ndarray:
+        y = np.zeros_like(x)
+        y[:, 0] = x[:, 0] - x[:, 2] / 2
+        y[:, 1] = x[:, 1] - x[:, 3] / 2
+        y[:, 2] = x[:, 0] + x[:, 2] / 2
+        y[:, 3] = x[:, 1] + x[:, 3] / 2
+        return y
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _nms(boxes: np.ndarray, scores: np.ndarray, iou_thr: float) -> List[int]:
+        x1, y1, x2, y2 = boxes.T
+        areas = (x2 - x1) * (y2 - y1)
+        order = scores.argsort()[::-1]
+        keep: List[int] = []
+        while order.size > 0:
+            i = int(order[0])
+            keep.append(i)
+            if order.size == 1:
+                break
+            xx1 = np.maximum(x1[i], x1[order[1:]])
+            yy1 = np.maximum(y1[i], y1[order[1:]])
+            xx2 = np.minimum(x2[i], x2[order[1:]])
+            yy2 = np.minimum(y2[i], y2[order[1:]])
+            w = np.maximum(0.0, xx2 - xx1)
+            h = np.maximum(0.0, yy2 - yy1)
+            inter = w * h
+            ovr = inter / (areas[i] + areas[order[1:]] - inter + 1e-16)
+            inds = np.where(ovr <= iou_thr)[0]
+            order = order[inds + 1]
+        return keep
 
 
 __all__ = ["TensorRTPoseEngine", "PoseDetection", "PoseInferenceResult"]
