@@ -564,8 +564,17 @@ class TensorRTPoseEngine:
             pred = pred.permute(0, 2, 1)
         pred = pred.float()
 
+        # Ensure confidence/class scores are probabilities even if the engine omits
+        # sigmoid in its output (some exports keep raw logits). This mirrors the
+        # standalone TensorRT script that applies activation before thresholding
+        # so scores remain in the expected 0-1 range.
+        pred_prob = pred.clone()
+        pred_prob[..., 4] = pred_prob[..., 4].sigmoid()
+        if self.num_classes:
+            pred_prob[..., 5 : 5 + self.num_classes] = pred_prob[..., 5 : 5 + self.num_classes].sigmoid()
+
         preds = ops.non_max_suppression(
-            pred,
+            pred_prob,
             conf_thres=self.conf_threshold,
             iou_thres=self.iou_threshold,
             max_det=self.max_det,
