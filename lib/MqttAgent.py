@@ -180,6 +180,9 @@ class DataHandler():
         self._logger = _make_logger(layer)
         self.DEFAULT_QOS = 0
 
+        self.POSE_COLOR = "\033[38;2;219;143;0m"
+        self.TRACKNET_COLOR = "\033[94m"
+
         self._pub_topics = {}     # 短名 -> 完整Topic
         self._subs = []          # [(topic_filter, handler, qos)]
 
@@ -212,7 +215,19 @@ class DataHandler():
 
         self.client.publish(topic, bytedata, qos=self.DEFAULT_QOS if qos is None else qos)
         if short_name != "metrics" and short_name != "heartbeat":
-            self._logger(f"Published DATA '{topic}:: {payload}'", "send")
+            formatted, color = self._render_special_log(short_name, payload)
+            if formatted is not None:
+                c = color or ""
+                reset = "\033[0m" if color else ""
+                print(f"{c}[{self.layer}] {formatted}{reset}")
+            else:
+                fallback_color = self._default_log_color(short_name)
+                if fallback_color:
+                    reset = "\033[0m"
+                    payload_repr = self._payload_repr(payload)
+                    print(f"{fallback_color}[{self.layer}] Published DATA '{topic}:: {payload_repr}'{reset}")
+                else:
+                    self._logger(f"Published DATA '{topic}:: {payload}'", "send")
         
     def subscribe(self, topic:str, callback, qos=None):
         
@@ -238,8 +253,83 @@ class DataHandler():
                 callback_func(data)
             except Exception as e:
                 logging.exception(f"Data handler error {e}")
-        
+
         return wrapper
+
+    # ------------------------------------------------------------------
+    def _render_special_log(self, short_name: str, payload):
+        parsed_payload = self._coerce_json(payload)
+        if short_name == "pose" and isinstance(parsed_payload, dict):
+            return self._format_pose_payload(parsed_payload), self.POSE_COLOR
+        return None, None
+
+    def _default_log_color(self, short_name: str) -> str:
+        if short_name == "pose":
+            return self.POSE_COLOR
+        if short_name == "tracknet":
+            return self.TRACKNET_COLOR
+        return ""
+
+    def _coerce_json(self, payload):
+        if isinstance(payload, str):
+            try:
+                return json.loads(payload)
+            except Exception:
+                return None
+        if isinstance(payload, (bytes, bytearray, memoryview)):
+            try:
+                return json.loads(bytes(payload).decode("utf-8"))
+            except Exception:
+                return None
+        if isinstance(payload, dict):
+            return payload
+        return None
+
+    def _format_pose_payload(self, payload: dict) -> str:
+        detections = payload.get("detections")
+        if not isinstance(detections, list):
+            return None
+
+        header_parts = [
+            f"camera={payload.get('camera_index', '?')}",
+            f"frame={payload.get('frame_index', '?')}",
+            f"size={payload.get('image_size')}",
+            f"detections={len(detections)}",
+        ]
+
+        timings = payload.get("timings_ms")
+        if isinstance(timings, dict) and timings:
+            timing_str = ", ".join(f"{k}={v}" for k, v in timings.items())
+            header_parts.append(f"timings_ms: {timing_str}")
+
+        lines = [f"[Pose] {' | '.join(header_parts)}"]
+        lines.append(f"Detected people: {len(detections)}")
+        lines.append("Detections:")
+
+        if detections:
+            for idx, det in enumerate(detections, 1):
+                block = json.dumps(det, ensure_ascii=False)
+                if idx > 1:
+                    lines.append("")
+                lines.append(f"  Person {idx}: {block}")
+        else:
+            lines.append("  (none)")
+
+        lines.append("===================================")
+
+        return "\n".join(lines)
+
+    def _payload_repr(self, payload):
+        if isinstance(payload, str):
+            return payload if payload else repr(payload)
+        if isinstance(payload, (bytes, bytearray, memoryview)):
+            data = bytes(payload)
+            try:
+                decoded = data.decode("utf-8")
+                return decoded if decoded else repr(data)
+            except Exception:
+                return repr(data)
+        return payload
 
 if __name__ == "__main__":
     camera_layer_server = MqttAgent('camera0', 'CameraLayer')

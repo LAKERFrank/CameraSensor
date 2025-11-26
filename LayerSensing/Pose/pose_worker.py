@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from typing import Any, Dict
 
 from LayerCamera.CameraSystemC.recorder_module import Frame, ImageBuffer
@@ -25,6 +26,7 @@ class PoseWorker(threading.Thread):
         engine_path: str,
         *,
         camera_index: int,
+        target_fps: float = 30.0,
         input_size: int = 640,
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
@@ -36,6 +38,8 @@ class PoseWorker(threading.Thread):
         self.data_handler = data_handler
         self.camera_index = camera_index
         self.stop_event = threading.Event()
+        self.target_interval = 1.0 / target_fps if target_fps > 0 else 0.0
+        self._next_publish_ts: float | None = None
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -56,10 +60,17 @@ class PoseWorker(threading.Thread):
                 if frame.is_eos:
                     LOGGER.info("%s pose worker received EOS", self.nodename)
                     break
+                now = time.monotonic()
+                if self.target_interval > 0 and self._next_publish_ts is not None:
+                    if now < self._next_publish_ts:
+                        continue
                 try:
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
+                    if self.target_interval > 0:
+                        publish_ts = time.monotonic()
+                        self._next_publish_ts = publish_ts + self.target_interval
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.exception("Pose inference failed: %s", exc)
         finally:
