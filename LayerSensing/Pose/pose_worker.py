@@ -62,8 +62,10 @@ class PoseWorker(threading.Thread):
                     break
                 now = time.monotonic()
                 if self.target_interval > 0 and self._next_publish_ts is not None:
-                    if now < self._next_publish_ts:
-                        continue
+                    remaining = self._next_publish_ts - now
+                    if remaining > 0:
+                        time.sleep(remaining)
+                        now = time.monotonic()
                 try:
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
