@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from typing import Any, Dict
 
 from LayerCamera.CameraSystemC.recorder_module import Frame, ImageBuffer
@@ -59,14 +60,15 @@ class PoseWorker(threading.Thread):
                 if frame.is_eos:
                     LOGGER.info("%s pose worker received EOS", self.nodename)
                     break
+                now = time.monotonic()
                 if self.target_interval > 0 and self._last_publish_ts is not None:
-                    if (frame.monotonic_timestamp - self._last_publish_ts) < self.target_interval:
+                    if (now - self._last_publish_ts) < self.target_interval:
                         continue
                 try:
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
-                    self._last_publish_ts = frame.monotonic_timestamp
+                    self._last_publish_ts = now
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.exception("Pose inference failed: %s", exc)
         finally:

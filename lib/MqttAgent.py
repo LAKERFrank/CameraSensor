@@ -180,7 +180,7 @@ class DataHandler():
         self._logger = _make_logger(layer)
         self.DEFAULT_QOS = 0
 
-        self.POSE_COLOR = "\033[93m"
+        self.POSE_COLOR = "\033[38;2;219;143;0m"
         self.TRACKNET_COLOR = "\033[94m"
 
         self._pub_topics = {}     # 短名 -> 完整Topic
