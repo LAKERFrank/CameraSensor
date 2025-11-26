@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import threading
-import time
 from typing import Any, Dict
 
 from LayerCamera.CameraSystemC.recorder_module import Frame, ImageBuffer
@@ -31,17 +30,17 @@ class PoseWorker(threading.Thread):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-    ) -> None:
+        ) -> None:
         super().__init__(daemon=True)
         self.nodename = nodename
         self.image_buffer = image_buffer
         self.data_handler = data_handler
         self.camera_index = camera_index
         self.stop_event = threading.Event()
-        self.target_interval = 1.0 / target_fps if target_fps > 0 else 0.0
-        self._next_publish_ts: float | None = (
-            time.monotonic() + self.target_interval if self.target_interval > 0 else None
-        )
+        base_camera_fps = 120.0
+        self.target_fps = target_fps
+        self.frame_stride = max(1, round(base_camera_fps / target_fps)) if target_fps > 0 else 1
+        self.effective_fps = base_camera_fps / self.frame_stride
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -53,35 +52,27 @@ class PoseWorker(threading.Thread):
 
     # ------------------------------------------------------------------
     def run(self) -> None:
-        LOGGER.info("%s pose worker started", self.nodename)
+        LOGGER.info(
+            "%s pose worker started (target_fps=%s, stride=%s -> ~%.2f fps)",
+            self.nodename,
+            self.target_fps,
+            self.frame_stride,
+            self.effective_fps,
+        )
         try:
             while not self.stop_event.is_set():
-                if self.target_interval > 0 and self._next_publish_ts is not None:
-                    now = time.monotonic()
-                    remaining = self._next_publish_ts - now
-                    if remaining > 0:
-                        time.sleep(remaining)
-                    elif remaining < -self.target_interval:
-                        # If we're significantly behind (e.g., after a stall), resync the schedule
-                        behind_intervals = int((-remaining) // self.target_interval) + 1
-                        self._next_publish_ts += behind_intervals * self.target_interval
-
                 frame = self.image_buffer.pop(True)
                 if frame is None:
                     continue
                 if frame.is_eos:
                     LOGGER.info("%s pose worker received EOS", self.nodename)
                     break
+                if frame.index % self.frame_stride != 0:
+                    continue
                 try:
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
-                    if self.target_interval > 0 and self._next_publish_ts is not None:
-                        self._next_publish_ts += self.target_interval
-                        now = time.monotonic()
-                        if now > self._next_publish_ts:
-                            intervals_late = int((now - self._next_publish_ts) // self.target_interval) + 1
-                            self._next_publish_ts += intervals_late * self.target_interval
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.exception("Pose inference failed: %s", exc)
         finally:
