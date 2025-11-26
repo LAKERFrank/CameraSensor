@@ -54,25 +54,23 @@ class PoseWorker(threading.Thread):
         LOGGER.info("%s pose worker started", self.nodename)
         try:
             while not self.stop_event.is_set():
+                if self.target_interval > 0 and self._next_publish_ts is not None:
+                    remaining = self._next_publish_ts - time.monotonic()
+                    if remaining > 0:
+                        time.sleep(remaining)
+
                 frame = self.image_buffer.pop(True)
                 if frame is None:
                     continue
                 if frame.is_eos:
                     LOGGER.info("%s pose worker received EOS", self.nodename)
                     break
-                now = time.monotonic()
-                if self.target_interval > 0 and self._next_publish_ts is not None:
-                    remaining = self._next_publish_ts - now
-                    if remaining > 0:
-                        time.sleep(remaining)
-                        now = time.monotonic()
                 try:
                     result = self.engine.predict(frame.image)
                     payload = self._format_payload(frame, result)
                     self.data_handler.publish("pose", json.dumps(payload))
                     if self.target_interval > 0:
-                        publish_ts = time.monotonic()
-                        self._next_publish_ts = publish_ts + self.target_interval
+                        self._next_publish_ts = time.monotonic() + self.target_interval
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.exception("Pose inference failed: %s", exc)
         finally:
