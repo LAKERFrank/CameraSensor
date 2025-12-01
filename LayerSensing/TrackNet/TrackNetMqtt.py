@@ -185,6 +185,14 @@ class TrackNetMqtt(threading.Thread):
 
         self._stopper = threading.Event()
 
+        # Image buffer consumer (if supported)
+        self._use_handles = hasattr(self.imageBuffer, "register_consumer")
+        self.consumer_id = (
+            self.imageBuffer.register_consumer(f"{nodename}_tracknet")
+            if self._use_handles
+            else None
+        )
+
     def stop(self):
         self._stopper.set()  
 
@@ -219,17 +227,29 @@ class TrackNetMqtt(threading.Thread):
 
         while not self._stopped():
 
-            frame = self.imageBuffer.pop(True)
+            handle = None
+            if self._use_handles:
+                handle = self.imageBuffer.pop_handle(self.consumer_id, True)
+                if handle is None:
+                    continue
+                frame = self.imageBuffer.get(handle)
+            else:
+                frame = self.imageBuffer.pop(True)
             if frame.is_eos:
                 if self.data_handler is not None:
                     self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
                 logging.info(f"{self.nodename} EOF reached.")
+                if handle is not None:
+                    self.imageBuffer.release(handle)
                 self.stop()
                 break
 
             window_images.append(frame.image)
             window_fids.append(frame.index)
             window_timestamps.append(frame.monotonic_timestamp)
+
+            if handle is not None:
+                self.imageBuffer.release(handle)
 
             if len(window_images) < TRACK_SIZE:
                 continue
