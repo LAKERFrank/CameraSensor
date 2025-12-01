@@ -203,10 +203,9 @@ class TrackNetMqtt(threading.Thread):
         self.model = model
 
     def run(self):
-        size = 0
-        list_images = []
-        list_fids = []
-        list_timestamps = []
+        window_images = []
+        window_fids = []
+        window_timestamps = []
 
         # TrackNet
         tracknetThread = TrackNetThread(device=self.device,
@@ -220,33 +219,32 @@ class TrackNetMqtt(threading.Thread):
 
         while not self._stopped():
 
-            while (not self._stopped()) and size < TRACK_SIZE:
-                frame = self.imageBuffer.pop(True)
-                if frame.is_eos:
-                    if self.data_handler is not None:
-                        self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
-                    logging.info(f"{self.nodename} EOF reached.")
-                    self.stop()
-                    break
-                list_images.append(frame.image)
-                list_fids.append(frame.index)
-                list_timestamps.append(frame.monotonic_timestamp)
-                size += 1
-
-            if self._stopped():
+            frame = self.imageBuffer.pop(True)
+            if frame.is_eos:
+                if self.data_handler is not None:
+                    self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
+                logging.info(f"{self.nodename} EOF reached.")
+                self.stop()
                 break
 
-            # run tracknet
+            window_images.append(frame.image)
+            window_fids.append(frame.index)
+            window_timestamps.append(frame.monotonic_timestamp)
+
+            if len(window_images) < TRACK_SIZE:
+                continue
+
+            # run tracknet on a sliding window to avoid skipping frames
             tracknetThread.init()
-            tracknetThread.images = list_images.copy()
-            tracknetThread.fids = list_fids.copy()
-            tracknetThread.timestamps = list_timestamps.copy()
+            tracknetThread.images = window_images.copy()
+            tracknetThread.fids = window_fids.copy()
+            tracknetThread.timestamps = window_timestamps.copy()
             tracknetThread.run()
 
-            list_images.clear()
-            list_fids.clear()
-            list_timestamps.clear()
-            size = 0
+            # slide window by one frame
+            window_images.pop(0)
+            window_fids.pop(0)
+            window_timestamps.pop(0)
         
         if self.csv_writer is not None:
             self.csv_writer.close()
