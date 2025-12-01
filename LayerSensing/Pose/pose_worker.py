@@ -41,7 +41,12 @@ class PoseWorker(threading.Thread):
         self.target_fps = target_fps
         self.frame_stride = max(1, round(base_camera_fps / target_fps)) if target_fps > 0 else 1
         self.effective_fps = base_camera_fps / self.frame_stride
-        self.consumer_id = self.image_buffer.register_consumer(f"{nodename}_pose")
+        self._use_handles = hasattr(self.image_buffer, "register_consumer")
+        self.consumer_id = (
+            self.image_buffer.register_consumer(f"{nodename}_pose")
+            if self._use_handles
+            else None
+        )
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -62,12 +67,17 @@ class PoseWorker(threading.Thread):
         )
         try:
             while not self.stop_event.is_set():
-                handle = self.image_buffer.pop_handle(self.consumer_id, True)
-                if handle is None:
-                    continue
-                frame = self.image_buffer.get(handle)
+                handle = None
+                if self._use_handles:
+                    handle = self.image_buffer.pop_handle(self.consumer_id, True)
+                    if handle is None:
+                        continue
+                    frame = self.image_buffer.get(handle)
+                else:
+                    frame = self.image_buffer.pop(True)
                 if frame is None:
-                    self.image_buffer.release(handle)
+                    if handle is not None:
+                        self.image_buffer.release(handle)
                     continue
                 try:
                     if frame.is_eos:
@@ -82,7 +92,8 @@ class PoseWorker(threading.Thread):
                     except Exception as exc:  # pragma: no cover - defensive logging
                         LOGGER.exception("Pose inference failed: %s", exc)
                 finally:
-                    self.image_buffer.release(handle)
+                    if handle is not None:
+                        self.image_buffer.release(handle)
         finally:
             self.engine.close()
             LOGGER.info("%s pose worker terminated", self.nodename)

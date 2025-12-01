@@ -11,7 +11,12 @@ class ImageBufferDataset(Dataset):
         self.track_size = track_size
         self.buffer = []  # 儲存一組 track_size 連續 frame
         self.imgsz = 640
-        self.consumer_id = self.image_buffer.register_consumer("tracknet_dataset")
+        self._use_handles = hasattr(self.image_buffer, "register_consumer")
+        self.consumer_id = (
+            self.image_buffer.register_consumer("tracknet_dataset")
+            if self._use_handles
+            else None
+        )
 
     def __len__(self):
         return 1_000_000  # 任意大，會由外部控制終止（如遇到 EOS）
@@ -30,12 +35,17 @@ class ImageBufferDataset(Dataset):
         # timestamps = []
 
         while len(frames) < self.track_size:
-            handle = self.image_buffer.pop_handle(self.consumer_id, True)
-            if handle is None:
-                continue
-            frame = self.image_buffer.get(handle)
+            handle = None
+            if self._use_handles:
+                handle = self.image_buffer.pop_handle(self.consumer_id, True)
+                if handle is None:
+                    continue
+                frame = self.image_buffer.get(handle)
+            else:
+                frame = self.image_buffer.pop(True)
             if frame is None:
-                self.image_buffer.release(handle)
+                if handle is not None:
+                    self.image_buffer.release(handle)
                 continue
             try:
                 if frame.is_eos:
@@ -46,7 +56,8 @@ class ImageBufferDataset(Dataset):
                 img = np.expand_dims(img, axis=0)  # (1, H, W)
                 frames.append(img)
             finally:
-                self.image_buffer.release(handle)
+                if handle is not None:
+                    self.image_buffer.release(handle)
             # frames.append(frame.image)
             # fids.append(frame.index)
             # timestamps.append(frame.monotonic_timestamp)
