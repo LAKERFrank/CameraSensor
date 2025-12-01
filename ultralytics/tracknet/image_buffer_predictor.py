@@ -44,6 +44,7 @@ class ImageBufferPredictor:
         self.image_buffer = image_buffer
         self.track_size = 10
         self.imgsz = 640
+        self.consumer_id = self.image_buffer.register_consumer("tracknet_predictor")
 
         self.max_streams = torch.cuda.device_count() * 2
         self.streams = [torch.cuda.Stream(device=self.device) for _ in range(self.max_streams)]
@@ -110,19 +111,28 @@ class ImageBufferPredictor:
     def _preprocess(self) -> Tuple[torch.Tensor, List[int], List[float]]:
         frames, fids, timestamps = [], [], []
         while len(frames) < self.track_size:
-            frame = self.image_buffer.pop(True)
+            handle = self.image_buffer.pop_handle(self.consumer_id, True)
+            if handle is None:
+                continue
+            frame = self.image_buffer.get(handle)
+            if frame is None:
+                self.image_buffer.release(handle)
+                continue
 
-            img = frame.image.astype(np.float32)
-            if img.ndim == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            img = self.pad_to_square(img)
-            img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
-            frames.append(np.expand_dims(img, axis=0))
-            fids.append(frame.index)
-            timestamps.append(frame.monotonic_timestamp)
-            if frame.is_eos:
-                self.stop()
-                break
+            try:
+                img = frame.image.astype(np.float32)
+                if img.ndim == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = self.pad_to_square(img)
+                img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
+                frames.append(np.expand_dims(img, axis=0))
+                fids.append(frame.index)
+                timestamps.append(frame.monotonic_timestamp)
+                if frame.is_eos:
+                    self.stop()
+                    break
+            finally:
+                self.image_buffer.release(handle)
 
         if len(frames) < self.track_size:
             for _ in range(self.track_size - len(frames)):

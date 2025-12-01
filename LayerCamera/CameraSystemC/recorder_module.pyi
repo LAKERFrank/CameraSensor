@@ -17,15 +17,27 @@ class Frame:
     @property
     def width(self) -> int: ...
 
+class FrameHandle:
+    slot_idx: int
+    frame_id: int
+
 class ImageBuffer:
     def __init__(self) -> None:
         """__init__(self: recorder_module.ImageBuffer) -> None"""
     def clear(self) -> None:
         """clear(self: recorder_module.ImageBuffer) -> None"""
+    def get(self, handle: FrameHandle) -> Frame:
+        """get(self: recorder_module.ImageBuffer, handle: recorder_module.FrameHandle) -> recorder_module.Frame"""
     def pop(self, blocking: bool = ...) -> Frame:
         """pop(self: recorder_module.ImageBuffer, blocking: bool = True) -> recorder_module.Frame"""
+    def pop_handle(self, consumer_id: int, blocking: bool = ...) -> FrameHandle:
+        """pop_handle(self: recorder_module.ImageBuffer, consumer_id: int, blocking: bool = True) -> recorder_module.FrameHandle"""
     def push(self, arg0: Frame) -> None:
         """push(self: recorder_module.ImageBuffer, arg0: recorder_module.Frame) -> None"""
+    def register_consumer(self, name: str) -> int:
+        """register_consumer(self: recorder_module.ImageBuffer, name: str) -> int"""
+    def release(self, handle: FrameHandle) -> None:
+        """release(self: recorder_module.ImageBuffer, handle: recorder_module.FrameHandle) -> None"""
 
 class MetricData:
     def __init__(self, *args, **kwargs) -> None:

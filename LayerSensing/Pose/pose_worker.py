@@ -41,6 +41,7 @@ class PoseWorker(threading.Thread):
         self.target_fps = target_fps
         self.frame_stride = max(1, round(base_camera_fps / target_fps)) if target_fps > 0 else 1
         self.effective_fps = base_camera_fps / self.frame_stride
+        self.consumer_id = self.image_buffer.register_consumer(f"{nodename}_pose")
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -61,20 +62,27 @@ class PoseWorker(threading.Thread):
         )
         try:
             while not self.stop_event.is_set():
-                frame = self.image_buffer.pop(True)
-                if frame is None:
+                handle = self.image_buffer.pop_handle(self.consumer_id, True)
+                if handle is None:
                     continue
-                if frame.is_eos:
-                    LOGGER.info("%s pose worker received EOS", self.nodename)
-                    break
-                if frame.index % self.frame_stride != 0:
+                frame = self.image_buffer.get(handle)
+                if frame is None:
+                    self.image_buffer.release(handle)
                     continue
                 try:
-                    result = self.engine.predict(frame.image)
-                    payload = self._format_payload(frame, result)
-                    self.data_handler.publish("pose", json.dumps(payload))
-                except Exception as exc:  # pragma: no cover - defensive logging
-                    LOGGER.exception("Pose inference failed: %s", exc)
+                    if frame.is_eos:
+                        LOGGER.info("%s pose worker received EOS", self.nodename)
+                        break
+                    if frame.index % self.frame_stride != 0:
+                        continue
+                    try:
+                        result = self.engine.predict(frame.image)
+                        payload = self._format_payload(frame, result)
+                        self.data_handler.publish("pose", json.dumps(payload))
+                    except Exception as exc:  # pragma: no cover - defensive logging
+                        LOGGER.exception("Pose inference failed: %s", exc)
+                finally:
+                    self.image_buffer.release(handle)
         finally:
             self.engine.close()
             LOGGER.info("%s pose worker terminated", self.nodename)

@@ -486,6 +486,10 @@ PYBIND11_MODULE(recorder_module, m) {
                                                     std::vector<size_t> {f.width * sizeof(uint8_t), sizeof(uint8_t)} // stride
                                                   ));
       }, "numpy.ndarray of BGR image");
+  py::class_<gsttcam::ImageBuffer::FrameHandle, std::shared_ptr<gsttcam::ImageBuffer::FrameHandle>>(m, "FrameHandle")
+      .def(py::init<>())
+      .def_readonly("slot_idx", &gsttcam::ImageBuffer::FrameHandle::slot_idx)
+      .def_readonly("frame_id", &gsttcam::ImageBuffer::FrameHandle::frame_id);
   py::class_<gsttcam::ImageBuffer, std::shared_ptr<gsttcam::ImageBuffer>>(m, "ImageBuffer")
       .def(py::init<>())
       .def(
@@ -495,6 +499,16 @@ PYBIND11_MODULE(recorder_module, m) {
             return imgbuf.pop(blocking);
           },
           "", "blocking"_a = true)
+      .def(
+          "pop_handle",
+          [](gsttcam::ImageBuffer& imgbuf, size_t consumer_id, bool blocking = true) {
+            py::gil_scoped_release release;
+            return imgbuf.pop_handle(consumer_id, blocking);
+          },
+          "consumer_id"_a, "blocking"_a = true)
+      .def("get", &gsttcam::ImageBuffer::get)
+      .def("release", &gsttcam::ImageBuffer::release)
+      .def("register_consumer", &gsttcam::ImageBuffer::register_consumer, "name"_a)
       .def("push", &gsttcam::ImageBuffer::push)
       .def("clear", &gsttcam::ImageBuffer::clear);
 
