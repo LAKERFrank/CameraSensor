@@ -41,6 +41,7 @@ class RpcSensing(RemoteProcedureCall):
         engine_filename: str,
         cam_idx: int,
         *,
+        target_fps: float = 30.0,
         input_size: int = 640,
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
@@ -51,6 +52,7 @@ class RpcSensing(RemoteProcedureCall):
         Args:
             engine_filename (str): Engine 檔案名稱或絕對路徑
             cam_idx (int): 相機編號
+            target_fps (float, optional): 目標發布 FPS. Defaults to 30.0.
             input_size (int, optional): 模型輸入尺寸. Defaults to 640.
             conf_threshold (float, optional): 置信度閾值. Defaults to 0.25.
             iou_threshold (float, optional): IoU 閾值. Defaults to 0.65.
@@ -64,6 +66,7 @@ class RpcSensing(RemoteProcedureCall):
             "Pose/start",
             engine_filename=engine_filename,
             cam_idx=cam_idx,
+            target_fps=target_fps,
             input_size=input_size,
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
