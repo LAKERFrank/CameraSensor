@@ -5,16 +5,23 @@ from torch.utils.data import Dataset
 
 from ultralytics.tracknet.protocal.image_buffer import ImageBufferProtocol
 
+
 class ImageBufferDataset(Dataset):
     def __init__(self, image_buffer: ImageBufferProtocol, track_size: int = 10):
         self.image_buffer = image_buffer
         self.track_size = track_size
         self.buffer = []  # 儲存一組 track_size 連續 frame
         self.imgsz = 640
+        self._use_handles = hasattr(self.image_buffer, "register_consumer")
+        self.consumer_id = (
+            self.image_buffer.register_consumer("tracknet_dataset")
+            if self._use_handles
+            else None
+        )
 
     def __len__(self):
         return 1_000_000  # 任意大，會由外部控制終止（如遇到 EOS）
-    
+
     def pad_to_square(self, img, pad_value=0):
         h, w = img.shape
         dim_diff = np.abs(h - w)
@@ -22,25 +29,40 @@ class ImageBufferDataset(Dataset):
         pad = (0, 0, pad1, pad2) if h > w else (pad1, pad2, 0, 0)
         img = cv2.copyMakeBorder(img, *pad, borderType=cv2.BORDER_CONSTANT, value=pad_value)
         return img
-    
+
     def __getitem__(self, index):
         frames = []
         fids = []
         timestamps = []
 
         while len(frames) < self.track_size:
-            frame = self.image_buffer.pop(True)
-            if frame.is_eos:
-                raise StopIteration  # 結束迴圈
-            img = frame.image.astype(np.float32)
-            img = self.pad_to_square(img)
-            img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
-            img = np.expand_dims(img, axis=0)  # (1, H, W)
-            frames.append(img)
-            fids.append(frame.index)
-            timestamps.append(frame.monotonic_timestamp)
+            handle = None
+            if self._use_handles:
+                handle = self.image_buffer.pop_handle(self.consumer_id, True)
+                if handle is None:
+                    continue
+                frame = self.image_buffer.get(handle)
+            else:
+                frame = self.image_buffer.pop(True)
+            if frame is None:
+                if handle is not None:
+                    self.image_buffer.release(handle)
+                continue
+            try:
+                if frame.is_eos:
+                    raise StopIteration  # 結束迴圈
+                img = frame.image.astype(np.float32)
+                img = self.pad_to_square(img)
+                img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
+                img = np.expand_dims(img, axis=0)  # (1, H, W)
+                frames.append(img)
+                fids.append(frame.index)
+                timestamps.append(frame.monotonic_timestamp)
+            finally:
+                if handle is not None:
+                    self.image_buffer.release(handle)
 
         img = np.concatenate(frames, 0)
         img_tensor = torch.from_numpy(img).float()
-            
+
         return (f"stream_dataset_{index}", img_tensor, "", "", fids, timestamps)
