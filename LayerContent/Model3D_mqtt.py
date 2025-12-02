@@ -3,6 +3,7 @@ Triangulation : To combine two 2D points into 3D point
 """
 import argparse
 import json
+from collections import deque
 import logging
 import os
 import sys
@@ -117,6 +118,27 @@ class RawTrack2D():
             self.points.append(point)
             self.inserted_count += 1
 
+
+class PoseReceiver:
+    def __init__(self, name: str, topic: str, data_handler, max_store: int = 200):
+        self.name = name
+        self.topic = topic
+        self.max_store = max_store
+        self.messages = deque(maxlen=max_store)
+        data_handler.subscribe(self.topic, self._on_message)
+
+    def _on_message(self, data):
+        self.messages.append(data)
+
+    def dump_to_file(self, save_dir: str):
+        if not self.messages:
+            return None
+        filepath = os.path.join(save_dir, f"{self.name}_pose_log.jsonl")
+        with open(filepath, "w") as f:
+            for msg in self.messages:
+                f.write(json.dumps(msg) + "\n")
+        return filepath
+
 class TriangulationThread(threading.Thread):
     def __init__(self, client, data_handler, main_thread, args, settings, ks, poses, eye, dist, newcameramtx, projection_mat):
         threading.Thread.__init__(self)
@@ -200,6 +222,14 @@ class TriangulationThread(threading.Thread):
             # logging.debug("[{}]: Write 2d csv in {} by topic {}".format(self.nodename, filePath, in_topic))
             self.csv2DWriters.append(CSVWriter(name=in_name, filename=filePath))
             print('--------------------------------------------')
+
+        # Setup Pose Receiver (optional)
+        self.pose_receivers = []
+        pose_topics = [t for t in settings.get('pose_topic', '').split(',') if t]
+        for pose_topic in pose_topics:
+            pose_name = pose_topic.split('/')[2]
+            receiver = PoseReceiver(pose_name, pose_topic, self.data_handler)
+            self.pose_receivers.append(receiver)
 
         # Setup MultiCamTriang
         self.multiCamTriang = MultiCamTriang(poses, eye, self.newcameramtx)
@@ -523,7 +553,13 @@ class TriangulationThread(threading.Thread):
 
         filePath_source = f"{self.save_path}/{self.nodename}_source.csv"
         self.camera_source.to_csv(filePath_source, index=False)
-        
+
+        # Persist any collected Pose messages for inspection
+        for receiver in self.pose_receivers:
+            saved_path = receiver.dump_to_file(self.save_path)
+            if saved_path:
+                logging.info("Saved pose log for %s to %s", receiver.name, saved_path)
+
         if len(Track3D) > 0:
             drawPoints(Track3D, self.save_path)
 
@@ -729,6 +765,7 @@ def prepare_main_thread(date, data, mode=None):
     settings = loadNodeConfig(projectCfg, nodename)
 
     input_topics = []
+    pose_topics = []
     ks, poses, eye, dist, newcameramtx, projection_mat = [], [], [], [], [], []
     camera_mapping = {}
     fps = float('inf')
@@ -745,6 +782,9 @@ def prepare_main_thread(date, data, mode=None):
 
                 tracknet_topic = f"/DATA/{camera_device}/SensingLayer/TrackNet"
                 input_topics.append(tracknet_topic)
+
+                pose_topic = f"/DATA/{camera_device}/SensingLayer/Pose"
+                pose_topics.append(pose_topic)
 
                 ks.append(parameters.get('ks'))
                 poses.append(parameters.get('poses'))
@@ -765,6 +805,7 @@ def prepare_main_thread(date, data, mode=None):
         settings['nodename'] = nodename
         settings['fps'] = fps
         settings['input_topic'] = ','.join(input_topics)
+        settings['pose_topic'] = ','.join(pose_topics)
         settings['output_topic'] = '/DATA/ContentDevice/ContentLayer/Model3D'
 
     args = argparse.Namespace(
@@ -822,11 +863,15 @@ def main():
         settings['fps'] = args.fps
 
     input_topics = []
+    pose_topics = []
     ks, poses, eye, dist, newcameramtx, projection_mat = [], [], [], [], [], []
 
     for idx, serial in zip(args.camera_idxs, args.camera_device):
         input_topic = f"/DATA/{serial}/SensingLayer/TrackNet"
         input_topics.append(input_topic)
+
+        pose_topic = f"/DATA/{serial}/SensingLayer/Pose"
+        pose_topics.append(pose_topic)
 
         replay_dir = f"{ROOTDIR}/replay/{args.date}"
         if os.path.exists(f"{replay_dir}/CameraReader_{idx}.cfg"):
@@ -849,6 +894,7 @@ def main():
     projection_mat = np.array(projection_mat)
 
     settings['input_topic'] = ','.join(input_topics)
+    settings['pose_topic'] = ','.join(pose_topics)
     settings['output_topic'] = '/DATA/ContentDevice/ContentLayer/Model3D'
 
     args = argparse.Namespace(

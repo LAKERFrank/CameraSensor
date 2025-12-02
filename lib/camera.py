@@ -107,7 +107,7 @@ class CameraReader():
 
     def openDevice(self):
         if self.fps == None or self.fps < 30:
-            self.fps = 60
+            self.fps = 30
         try:
             if(self.modelName == "AUX"):
                 self.camera = Gst.parse_launch(

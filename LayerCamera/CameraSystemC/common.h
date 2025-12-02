@@ -4,6 +4,9 @@
 #include <queue>
 #include <mutex>
 #include <atomic>
+#include <optional>
+#include <string>
+#include <vector>
 #include <condition_variable>
 #include <opencv4/opencv2/opencv.hpp>
 
@@ -38,15 +41,35 @@ public:
 class ImageBuffer : public std::enable_shared_from_this<ImageBuffer>
 {
 public:
-    ImageBuffer() {};
+    ImageBuffer();
     ~ImageBuffer() {};
+    struct FrameHandle {
+        size_t slot_idx = 0;
+        uint64_t frame_id = 0;
+    };
+
+    struct FrameSlot {
+        std::shared_ptr<Frame> frame = nullptr;
+        uint64_t frame_id = 0;
+        std::atomic<int> refcnt = 0;
+    };
+
     std::shared_ptr<Frame> pop(bool blocking = true);
     void push(std::shared_ptr<Frame> frame);
     void clear();
 
+    size_t register_consumer(const std::string& name);
+    std::shared_ptr<FrameHandle> pop_handle(size_t consumer_id, bool blocking = true);
+    std::shared_ptr<Frame> get(std::shared_ptr<FrameHandle> handle);
+    void release(std::shared_ptr<FrameHandle> handle);
+
 private:
     unsigned int MAX_SIZE = 600; // 5s under 120fps
-    std::queue<std::shared_ptr<Frame>> _image_queue;
+    std::vector<FrameSlot> _slots;
+    std::queue<size_t> _free_slots;
+    std::vector<std::queue<std::shared_ptr<FrameHandle>>> _consumer_queues;
+    std::vector<std::string> _consumer_names;
+    std::optional<size_t> _legacy_consumer_id;
     std::mutex _mutex;
 
     // Condition variable for signaling

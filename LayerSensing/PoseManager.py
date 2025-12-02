@@ -37,6 +37,7 @@ class PoseManager:
         engine_filename: str,
         cam_idx: int,
         *,
+        target_fps: float = 30.0,
         input_size: int = 640,
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
@@ -50,6 +51,11 @@ class PoseManager:
             if not engine_path.is_absolute():
                 engine_path = Path(ROOTDIR) / "LayerSensing" / "Pose" / "engine" / engine_filename
             engine_path = engine_path.resolve()
+            if not engine_path.is_file():
+                raise FileNotFoundError(
+                    f"Pose engine not found: {engine_path}. "
+                    "Place the engine under LayerSensing/Pose/engine or provide an absolute path."
+                )
 
             self.pose_thread = PoseMqtt(
                 f"Pose_{cam_idx}",
@@ -58,6 +64,7 @@ class PoseManager:
                 self.image_buffer,
                 str(engine_path),
                 camera_index=cam_idx,
+                target_fps=target_fps,
                 input_size=input_size,
                 conf_threshold=conf_threshold,
                 iou_threshold=iou_threshold,

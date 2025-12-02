@@ -103,6 +103,12 @@ class ImageBufferPredictor:
         self.image_buffer = image_buffer
         self.track_size = 10
         self.imgsz = 640
+        self._use_handles = hasattr(self.image_buffer, "register_consumer")
+        self.consumer_id = (
+            self.image_buffer.register_consumer("tracknet_predictor")
+            if self._use_handles
+            else None
+        )
 
         self.max_streams = torch.cuda.device_count() * 2
         self.streams = [torch.cuda.Stream(device=self.device) for _ in range(self.max_streams)]
@@ -153,25 +159,40 @@ class ImageBufferPredictor:
     def _preprocess(self) -> Tuple[torch.Tensor, List[int], List[float]]:
         frames, fids, timestamps = [], [], []
         while len(frames) < self.track_size:
-            frame = self.image_buffer.pop(True)
-            if frame.is_eos:
-                self.stop()
-                self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
-                break
+            handle = None
+            if self._use_handles:
+                handle = self.image_buffer.pop_handle(self.consumer_id, True)
+                if handle is None:
+                    continue
+                frame = self.image_buffer.get(handle)
+            else:
+                frame = self.image_buffer.pop(True)
+            if frame is None:
+                if handle is not None:
+                    self.image_buffer.release(handle)
+                continue
+            try:
+                if frame.is_eos:
+                    self.stop()
+                    self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
+                    break
 
-            # 目前傳入的尺寸不精確，在此額外處理
-            self.output_height, self.output_width = frame.image.shape[:2]
+                # 目前傳入的尺寸不精確，在此額外處理
+                self.output_height, self.output_width = frame.image.shape[:2]
 
-            if self.save_pred_images:
-                self._frame_cache[frame.index] = frame.image.copy()
-            img = frame.image.astype(np.float32)
-            if img.ndim == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            img = self.pad_to_square(img)
-            img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
-            frames.append(np.expand_dims(img, axis=0))
-            fids.append(frame.index)
-            timestamps.append(frame.monotonic_timestamp)
+                if self.save_pred_images:
+                    self._frame_cache[frame.index] = frame.image.copy()
+                img = frame.image.astype(np.float32)
+                if img.ndim == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = self.pad_to_square(img)
+                img = cv2.resize(img, dsize=(self.imgsz, self.imgsz), interpolation=cv2.INTER_CUBIC)
+                frames.append(np.expand_dims(img, axis=0))
+                fids.append(frame.index)
+                timestamps.append(frame.monotonic_timestamp)
+            finally:
+                if handle is not None:
+                    self.image_buffer.release(handle)
 
         if len(frames) < self.track_size:
             for _ in range(self.track_size - len(frames)):

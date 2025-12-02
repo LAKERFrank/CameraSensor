@@ -25,17 +25,28 @@ class PoseWorker(threading.Thread):
         engine_path: str,
         *,
         camera_index: int,
+        target_fps: float = 30.0,
         input_size: int = 640,
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.65,
         max_det: int = 100,
-    ) -> None:
+        ) -> None:
         super().__init__(daemon=True)
         self.nodename = nodename
         self.image_buffer = image_buffer
         self.data_handler = data_handler
         self.camera_index = camera_index
         self.stop_event = threading.Event()
+        base_camera_fps = 120.0
+        self.target_fps = target_fps
+        self.frame_stride = max(1, round(base_camera_fps / target_fps)) if target_fps > 0 else 1
+        self.effective_fps = base_camera_fps / self.frame_stride
+        self._use_handles = hasattr(self.image_buffer, "register_consumer")
+        self.consumer_id = (
+            self.image_buffer.register_consumer(f"{nodename}_pose")
+            if self._use_handles
+            else None
+        )
 
         self.engine = TensorRTPoseEngine(
             engine_path,
@@ -47,21 +58,42 @@ class PoseWorker(threading.Thread):
 
     # ------------------------------------------------------------------
     def run(self) -> None:
-        LOGGER.info("%s pose worker started", self.nodename)
+        LOGGER.info(
+            "%s pose worker started (target_fps=%s, stride=%s -> ~%.2f fps)",
+            self.nodename,
+            self.target_fps,
+            self.frame_stride,
+            self.effective_fps,
+        )
         try:
             while not self.stop_event.is_set():
-                frame = self.image_buffer.pop(True)
+                handle = None
+                if self._use_handles:
+                    handle = self.image_buffer.pop_handle(self.consumer_id, True)
+                    if handle is None:
+                        continue
+                    frame = self.image_buffer.get(handle)
+                else:
+                    frame = self.image_buffer.pop(True)
                 if frame is None:
+                    if handle is not None:
+                        self.image_buffer.release(handle)
                     continue
-                if frame.is_eos:
-                    LOGGER.info("%s pose worker received EOS", self.nodename)
-                    break
                 try:
-                    result = self.engine.predict(frame.image)
-                    payload = self._format_payload(frame, result)
-                    self.data_handler.publish("pose", json.dumps(payload))
-                except Exception as exc:  # pragma: no cover - defensive logging
-                    LOGGER.exception("Pose inference failed: %s", exc)
+                    if frame.is_eos:
+                        LOGGER.info("%s pose worker received EOS", self.nodename)
+                        break
+                    if frame.index % self.frame_stride != 0:
+                        continue
+                    try:
+                        result = self.engine.predict(frame.image)
+                        payload = self._format_payload(frame, result)
+                        self.data_handler.publish("pose", json.dumps(payload))
+                    except Exception as exc:  # pragma: no cover - defensive logging
+                        LOGGER.exception("Pose inference failed: %s", exc)
+                finally:
+                    if handle is not None:
+                        self.image_buffer.release(handle)
         finally:
             self.engine.close()
             LOGGER.info("%s pose worker terminated", self.nodename)
