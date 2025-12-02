@@ -1,6 +1,7 @@
 
 #include "common.h"
 #include <stdexcept>
+#include <iostream>
 
 using namespace gsttcam;
 
@@ -49,6 +50,11 @@ std::shared_ptr<ImageBuffer::FrameHandle> ImageBuffer::pop_handle(size_t consume
 
     auto ret = queue.front();
     queue.pop();
+
+    std::string consumer_name =
+        consumer_id < _consumer_names.size() ? _consumer_names[consumer_id] : std::string("unknown");
+    std::cout << "[ImageBuffer] Consumer '" << consumer_name << "' popped frame " << ret->frame_id
+              << " from slot " << ret->slot_idx << std::endl;
     return ret;
 }
 
@@ -76,6 +82,15 @@ void ImageBuffer::push(std::shared_ptr<Frame> frame)
         handle->frame_id = slot.frame_id;
         consumer_queue.push(handle);
     }
+
+    std::cout << "[ImageBuffer] Pushed frame " << slot.frame_id << " into slot " << slot_idx << " for consumers: ";
+    for (size_t i = 0; i < _consumer_names.size(); ++i) {
+        std::cout << _consumer_names[i];
+        if (i + 1 < _consumer_names.size()) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << std::endl;
 
     _cond.notify_all();
 }
@@ -119,6 +134,7 @@ size_t ImageBuffer::register_consumer(const std::string& name)
     size_t id = _consumer_queues.size();
     _consumer_queues.emplace_back();
     _consumer_names.push_back(name);
+    std::cout << "[ImageBuffer] Registered consumer '" << name << "' with id " << id << std::endl;
     return id;
 }
 

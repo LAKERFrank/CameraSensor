@@ -164,6 +164,11 @@ class ImageBufferPredictor:
                 handle = self.image_buffer.pop_handle(self.consumer_id, True)
                 if handle is None:
                     continue
+                LOGGER.info(
+                    "[TrackNet] Popped handle frame_id=%s slot=%s",
+                    getattr(handle, "frame_id", None),
+                    getattr(handle, "slot_idx", None),
+                )
                 frame = self.image_buffer.get(handle)
             else:
                 frame = self.image_buffer.pop(True)
