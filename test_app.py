@@ -21,13 +21,14 @@ sensing = RpcSensing("CameraReader_0", mqtt.mqttc)
 
 # save dir
 # replay_dirname = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-replay_dirname = "2025-10-15_11-41-07"
+replay_dirname = "2025-11-18_11-41-07"
 
-ret = sensing.startTrackNet((640, 480), "tracknet_v2", "no114_30.tar", replay_dirname, 0)
+# ret = sensing.startTrackNet((640, 480), "tracknet_v2", "no114_30.tar", replay_dirname, 0)
+ret = sensing.startTrackNet((640, 480), "tracknet_1000", "best.pt", replay_dirname, 0)
 print(f"TrackNet: {ret}")
 
 # Launch pose inference with a TensorRT engine.
-pose_ret = sensing.startPose("pose.engine", 0)
+pose_ret = sensing.startPose("pose_int8_minmax.engine", 0)
 print(f"Pose: {pose_ret}")
 
 duration = camera.startVideoFeeder(f"{ROOTDIR}/replay/{replay_dirname}/CameraReader_0.mp4")
