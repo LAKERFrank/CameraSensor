@@ -71,12 +71,35 @@ sensing.stopPose()
 mqtt.mqttc.message_callback_remove(pose_topic)
 mqtt.mqttc.unsubscribe(pose_topic)
 
+def _wait_for_file(path: Path, *, timeout: float = 60.0, min_size: int = 1) -> bool:
+    """Wait for a file to exist and reach a minimum size."""
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if path.exists() and path.stat().st_size >= min_size:
+            return True
+        time.sleep(0.5)
+    return path.exists()
+
+
 video_path = replay_path / "CameraReader_0.mp4"
 tracknet_csv = replay_path / "TrackNet_0.csv"
-pose_file = pose_path if pose_path.exists() else None
 
-try:
-    output_path = visualize(video_path, tracknet_csv, pose_path=pose_file)
-    print(f"Visualization saved to: {output_path}")
-except Exception as exc:
-    logging.error(f"Failed to visualize TrackNet/Pose outputs: {exc}")
+if not video_path.exists():
+    logging.error("Video file not found: %s", video_path)
+else:
+    logging.info("Waiting for TrackNet CSV at %s", tracknet_csv)
+    has_csv = _wait_for_file(tracknet_csv, timeout=90.0)
+    has_pose = pose_path.exists()
+
+    if not has_csv:
+        logging.error("TrackNet CSV not found; skip visualization: %s", tracknet_csv)
+    else:
+        pose_file = pose_path if has_pose else None
+        if pose_file:
+            logging.info("Using pose log: %s", pose_file)
+        try:
+            output_path = visualize(video_path, tracknet_csv, pose_path=pose_file)
+            print(f"Visualization saved to: {output_path}")
+        except Exception as exc:
+            logging.error("Failed to visualize TrackNet/Pose outputs: %s", exc)

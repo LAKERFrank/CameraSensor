@@ -114,6 +114,9 @@ def visualize(
     output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if not tracknet_csv.exists():
+        raise FileNotFoundError(f"TrackNet CSV not found: {tracknet_csv}")
+
     tracknet_points = _load_tracknet_points(tracknet_csv)
     pose_entries = _load_pose_entries(pose_path) if pose_path and pose_path.exists() else {}
 
