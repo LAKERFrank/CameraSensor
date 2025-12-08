@@ -72,14 +72,29 @@ mqtt.mqttc.message_callback_remove(pose_topic)
 mqtt.mqttc.unsubscribe(pose_topic)
 
 def _wait_for_file(path: Path, *, timeout: float = 60.0, min_size: int = 1) -> bool:
-    """Wait for a file to exist and reach a minimum size."""
+    """Wait for a file to exist, reach a minimum size, and stop growing."""
 
     deadline = time.time() + timeout
+    last_size = -1
+    stable_checks = 0
     while time.time() < deadline:
-        if path.exists() and path.stat().st_size >= min_size:
-            return True
+        if path.exists():
+            size = path.stat().st_size
+            if size >= min_size:
+                if size == last_size:
+                    stable_checks += 1
+                else:
+                    stable_checks = 0
+                last_size = size
+                if stable_checks >= 2:  # stable for ~1s
+                    logging.info("File ready: %s (size=%d)", path, size)
+                    return True
+            else:
+                logging.debug("Waiting for %s to reach %d bytes (current=%d)", path, min_size, size)
         time.sleep(0.5)
-    return path.exists()
+    if path.exists():
+        logging.warning("Timeout waiting for %s to stabilize (final size=%d)", path, path.stat().st_size)
+    return False
 
 
 video_path = replay_path / "CameraReader_0.mp4"
@@ -90,7 +105,7 @@ if not video_path.exists():
 else:
     logging.info("Waiting for TrackNet CSV at %s", tracknet_csv)
     has_csv = _wait_for_file(tracknet_csv, timeout=90.0)
-    has_pose = pose_path.exists()
+    has_pose = _wait_for_file(pose_path, timeout=10.0, min_size=10) if pose_path.exists() else False
 
     if not has_csv:
         logging.error("TrackNet CSV not found; skip visualization: %s", tracknet_csv)
@@ -98,6 +113,8 @@ else:
         pose_file = pose_path if has_pose else None
         if pose_file:
             logging.info("Using pose log: %s", pose_file)
+        else:
+            logging.info("Pose log missing or empty; visualizing TrackNet only")
         try:
             output_path = visualize(video_path, tracknet_csv, pose_path=pose_file)
             print(f"Visualization saved to: {output_path}")
