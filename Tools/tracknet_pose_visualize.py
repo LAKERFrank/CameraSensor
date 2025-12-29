@@ -42,9 +42,20 @@ BLUE = (255, 0, 0)
 
 def _load_tracknet_points(csv_path: Path) -> Dict[int, Tuple[float, float]]:
     df = pd.read_csv(csv_path)
-    visible = df[df["Visibility"] == 1]
+
+    # Prefer the Visibility flag when present but do not drop rows if the column
+    # is missing or all visibilities are zero (some exports never mark the ball
+    # as visible). This keeps a point available for every frame TrackNet
+    # produced.
+    if "Visibility" in df.columns and df["Visibility"].sum() > 0:
+        df = df[df["Visibility"] == 1]
+
+    # Normalize frame index to zero-based to match OpenCV's frame counter.
+    if df["Frame"].min() >= 1 and 0 not in set(df["Frame"].tolist()):
+        df = df.assign(Frame=df["Frame"] - 1)
+
     # Ensure the latest point per frame is used if duplicates exist.
-    return {int(row.Frame): (float(row.X), float(row.Y)) for row in visible.itertuples(index=False)}
+    return {int(row.Frame): (float(row.X), float(row.Y)) for row in df.itertuples(index=False)}
 
 
 def _load_pose_entries(pose_path: Path) -> Dict[int, List[List[List[float]]]]:
@@ -64,9 +75,13 @@ def _load_pose_entries(pose_path: Path) -> Dict[int, List[List[List[float]]]]:
             payload = json.loads(line)
         except json.JSONDecodeError:
             continue
-        frame_idx = payload.get("frame_index")
+        frame_idx_raw = payload.get("frame_index")
         detections = payload.get("detections")
-        if not isinstance(frame_idx, int) or not isinstance(detections, list):
+        try:
+            frame_idx = int(frame_idx_raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(detections, list):
             continue
         keypoints_list = []
         for det in detections:
@@ -75,6 +90,9 @@ def _load_pose_entries(pose_path: Path) -> Dict[int, List[List[List[float]]]]:
                 keypoints_list.append(kpts)
         if keypoints_list:
             frames.setdefault(frame_idx, []).extend(keypoints_list)
+
+    if frames and min(frames) >= 1 and 0 not in frames:
+        frames = {idx - 1: detections for idx, detections in frames.items()}
     return frames
 
 

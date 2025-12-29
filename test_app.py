@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -26,8 +27,7 @@ sensing = RpcSensing("CameraReader_0", mqtt.mqttc)
 device_name = "CameraReader_0"
 
 # save dir
-# replay_dirname = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-replay_dirname = "2025-11-18_11-41-07"
+replay_dirname = os.environ.get("REPLAY_DIRNAME") or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 replay_path = Path(ROOTDIR) / "replay" / replay_dirname
 replay_path.mkdir(parents=True, exist_ok=True)
@@ -105,7 +105,7 @@ if not video_path.exists():
 else:
     logging.info("Waiting for TrackNet CSV at %s", tracknet_csv)
     has_csv = _wait_for_file(tracknet_csv, timeout=90.0)
-    has_pose = _wait_for_file(pose_path, timeout=10.0, min_size=10) if pose_path.exists() else False
+    has_pose = _wait_for_file(pose_path, timeout=10.0, min_size=10)
 
     if not has_csv:
         logging.error("TrackNet CSV not found; skip visualization: %s", tracknet_csv)
