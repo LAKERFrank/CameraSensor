@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from datetime import datetime
@@ -49,6 +50,28 @@ def _pose_logger(client, userdata, msg):
             fp.write(payload)
             fp.write("\n")
 
+def _resolve_feeder_video() -> Path:
+    env_video = os.environ.get("VIDEO_PATH") or os.environ.get("FEEDER_VIDEO")
+    if env_video:
+        candidate = Path(env_video).expanduser()
+        if not candidate.is_absolute():
+            candidate = (Path(ROOTDIR) / candidate).resolve()
+        if candidate.exists():
+            return candidate
+        raise FileNotFoundError(f"Specified video not found: {candidate}")
+
+    replay_root = Path(ROOTDIR) / "replay"
+    candidates = sorted(
+        replay_root.glob("*/CameraReader_0.mp4"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if candidates:
+        return candidates[0]
+    raise FileNotFoundError(
+        "No replay video found. Set VIDEO_PATH or FEEDER_VIDEO to an existing mp4."
+    )
+
 # ret = sensing.startTrackNet((640, 480), "tracknet_v2", "no114_30.tar", replay_dirname, 0)
 ret = sensing.startTrackNet((640, 480), "tracknet_1000", "best.pt", replay_dirname, 0)
 print(f"TrackNet: {ret}")
@@ -60,7 +83,14 @@ print(f"Pose: {pose_ret}")
 mqtt.mqttc.message_callback_add(pose_topic, _pose_logger)
 mqtt.mqttc.subscribe(pose_topic)
 
-duration = camera.startVideoFeeder(f"{ROOTDIR}/replay/{replay_dirname}/CameraReader_0.mp4")
+try:
+    feeder_video = _resolve_feeder_video()
+except FileNotFoundError as exc:
+    logging.error("%s", exc)
+    sys.exit(1)
+
+logging.info("Using feeder video: %s", feeder_video)
+duration = camera.startVideoFeeder(str(feeder_video))
 
 time.sleep(duration)
 
@@ -97,7 +127,7 @@ def _wait_for_file(path: Path, *, timeout: float = 60.0, min_size: int = 1) -> b
     return False
 
 
-video_path = replay_path / "CameraReader_0.mp4"
+video_path = feeder_video
 tracknet_csv = replay_path / "TrackNet_0.csv"
 
 if not video_path.exists():
@@ -116,7 +146,12 @@ else:
         else:
             logging.info("Pose log missing or empty; visualizing TrackNet only")
         try:
-            output_path = visualize(video_path, tracknet_csv, pose_path=pose_file)
+            output_path = visualize(
+                video_path,
+                tracknet_csv,
+                pose_path=pose_file,
+                output_path=replay_path / f"{video_path.stem}_tracknet_pose.mp4",
+            )
             print(f"Visualization saved to: {output_path}")
         except Exception as exc:
             logging.error("Failed to visualize TrackNet/Pose outputs: %s", exc)
