@@ -40,3 +40,22 @@ class RpcSensing(RemoteProcedureCall):
 
     def stopDatafeeder(self):
         return self._call_rpc_sync("TrackNet/stopDatafeeder")
+
+    def startPose(self, engine_filename: str = "int8.engine"):
+        """Start Pose thread
+
+        Args:
+            engine_filename (str): TensorRT engine filename or absolute path.
+
+        Returns:
+            dict: 狀態
+        """
+        return self._call_rpc_sync("Pose/start", engine_filename=engine_filename)
+
+    def stopPose(self):
+        """Stop Pose thread
+
+        Returns:
+            dict: 狀態
+        """
+        return self._call_rpc_sync("Pose/stop", timeout=1000)
