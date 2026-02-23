@@ -223,6 +223,8 @@ class TrackNetMqtt(threading.Thread):
             while (not self._stopped()) and size < TRACK_SIZE:
                 frame = self.imageBuffer.pop(True)
                 if frame.is_eos:
+                    if hasattr(frame, 'release'):
+                        frame.release()
                     if self.data_handler is not None:
                         self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
                     logging.info(f"{self.nodename} EOF reached.")
@@ -231,6 +233,8 @@ class TrackNetMqtt(threading.Thread):
                 list_images.append(frame.image)
                 list_fids.append(frame.index)
                 list_timestamps.append(frame.monotonic_timestamp)
+                if hasattr(frame, 'release'):
+                    frame.release()
                 size += 1
 
             if self._stopped():
