@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from LayerApplication.utils.Mqtt import MqttClient
 from LayerCamera.camera.RpcCamera import RpcCamera
@@ -32,7 +33,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def _resolve_feeder_video(video_arg: str | None) -> Path:
+def _resolve_feeder_video(video_arg: Optional[str]) -> Path:
     env_video = video_arg or os.environ.get("VIDEO_PATH") or os.environ.get("FEEDER_VIDEO")
     if env_video:
         candidate = Path(env_video).expanduser()
