@@ -51,10 +51,7 @@ class TrackNet1000Mqtt(threading.Thread):
         self.device = device
 
         self.nodename = nodename
-        model_path = weights_filename
-        if not os.path.isabs(model_path):
-            filename = model_path if model_path.endswith('.pt') else f"{model_path}.pt"
-            model_path = f"{ROOTDIR}/LayerSensing/TrackNet/Tracknet1000/weights/{filename}"
+        model_path = f"{ROOTDIR}/LayerSensing/TrackNet/TrackNet1000/weights/{weights_filename}.pt"
 
         # wait for new image
         self.isProcessing = False
