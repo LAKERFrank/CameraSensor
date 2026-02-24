@@ -10,8 +10,8 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("name", help="host name")
-    parser.add_argument("serial", help="camera serial")
+    parser.add_argument("name", nargs="?", default="test-0", help="host name")
+    parser.add_argument("serial", nargs="?", default="None", help="camera serial")
     args = parser.parse_args()
 
     # loading project config

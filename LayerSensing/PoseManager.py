@@ -10,7 +10,7 @@ class PoseManager:
         self.distributor = distributor
         self.poseThread = None
 
-    def startPose(self, engine_filename: str = 'int8.engine'):
+    def startPose(self, camera_origin_size: 'tuple[int, int]' = (640, 480), engine_filename: str = 'int8.engine', replay_dirname: str = '', cam_idx: int = 0):
         try:
             if self.poseThread is not None:
                 raise Exception('There is another Pose thread is running.')
