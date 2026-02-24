@@ -155,6 +155,8 @@ class ImageBufferPredictor:
         while len(frames) < self.track_size:
             frame = self.image_buffer.pop(True)
             if frame.is_eos:
+                if hasattr(frame, 'release'):
+                    frame.release()
                 self.stop()
                 self.data_handler.publish("tracknet", json.dumps({"linear": [], "EOF": True}))
                 break
@@ -172,6 +174,8 @@ class ImageBufferPredictor:
             frames.append(np.expand_dims(img, axis=0))
             fids.append(frame.index)
             timestamps.append(frame.monotonic_timestamp)
+            if hasattr(frame, 'release'):
+                frame.release()
 
         if len(frames) < self.track_size:
             for _ in range(self.track_size - len(frames)):

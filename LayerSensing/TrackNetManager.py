@@ -10,7 +10,7 @@ from LayerSensing.Datafeeder import Datafeeder
 from lib.common import ROOTDIR
 
 class TrackNetManager:
-    def __init__(self, device_name, data_handler, mqttc:mqtt.Client, imgbuf:ImageBuffer):
+    def __init__(self, device_name, data_handler, mqttc:mqtt.Client, imgbuf):
 
         self.deviceName = device_name
         self.data_handler = data_handler        
@@ -40,6 +40,9 @@ class TrackNetManager:
             if self.tracknetThread is not None:
                 raise Exception("There is another Tracknet thread is running.")
 
+            if hasattr(self.imageBuffer, 'activate_tracknet'):
+                self.imageBuffer.activate_tracknet(True)
+
             # tracknet_topic = f"/DATA/{self.deviceName}/SensingLayer/TrackNet"
 
             replay_path = f"{ROOTDIR}/replay/{replay_dirname}"
@@ -61,6 +64,8 @@ class TrackNetManager:
             self.tracknetThread.start()
             return {"status": "ready"}
         except Exception as e:
+            if hasattr(self.imageBuffer, 'activate_tracknet'):
+                self.imageBuffer.activate_tracknet(False)
             return {"status": "failure", "message": str(e)}
 
     def stopTrackNet(self, wait_for_eos=True):
@@ -75,6 +80,8 @@ class TrackNetManager:
                 self.imageBuffer.push(frame)
             self.tracknetThread.join()
             self.tracknetThread = None
+            if hasattr(self.imageBuffer, 'activate_tracknet'):
+                self.imageBuffer.activate_tracknet(False)
             return {"status": "stopped " + ("(EOS reached)" if wait_for_eos else "(Force stop)")}
         except Exception as e:
             return {"status": "failure", "message": str(e)}
