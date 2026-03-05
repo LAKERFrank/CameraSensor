@@ -65,16 +65,35 @@ class TensorRTPoseEngine:
         return self._postprocess(raw, image.shape[:2], ratio, pad)
 
     def _preprocess(self, image):
+        if image.ndim == 2:
+            channels = 1
+        elif image.ndim == 3 and image.shape[2] > 0:
+            channels = image.shape[2]
+        else:
+            raise ValueError(f'Unsupported image shape for pose preprocess: {image.shape}')
+
         h, w = image.shape[:2]
         target_w, target_h = self.input_size
         ratio = min(target_w / w, target_h / h)
         nw, nh = int(round(w * ratio)), int(round(h * ratio))
         resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_LINEAR)
-        canvas = np.full((target_h, target_w, 3), 114, dtype=np.uint8)
         dw = (target_w - nw) // 2
         dh = (target_h - nh) // 2
-        canvas[dh:dh + nh, dw:dw + nw, :] = resized
-        tensor = canvas[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+
+        if channels == 1:
+            if resized.ndim == 3:
+                resized = resized[:, :, 0]
+            canvas = np.full((target_h, target_w), 114, dtype=np.uint8)
+            canvas[dh:dh + nh, dw:dw + nw] = resized
+            tensor = canvas[np.newaxis, :, :].astype(np.float32) / 255.0
+        else:
+            canvas = np.full((target_h, target_w, channels), 114, dtype=np.uint8)
+            canvas[dh:dh + nh, dw:dw + nw, :] = resized
+            if channels == 3:
+                tensor = canvas[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+            else:
+                tensor = canvas.transpose(2, 0, 1).astype(np.float32) / 255.0
+
         return np.expand_dims(tensor, 0), ratio, (dw, dh)
 
     def _postprocess(self, raw, orig_shape, ratio, pad):
