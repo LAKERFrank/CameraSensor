@@ -13,7 +13,13 @@ class SensingLayerAgent(MqttAgent):
 
         self.frameDistributor = FrameDistributor(imgbuf)
         self.frameDistributor.start()
-        self.tracknetManager = TrackNetManager(device_name, self.data_handler, self.mqttc, self.frameDistributor.tracknet_queue)
+        self.tracknetManager = TrackNetManager(
+            device_name,
+            self.data_handler,
+            self.mqttc,
+            self.frameDistributor,
+            self.frameDistributor.tracknet_queue,
+        )
         self.poseManager = PoseManager(self.data_handler, self.frameDistributor)
 
     def on_connect(self, client:mqtt.Client, userdata, flags, reason_code, properties):
