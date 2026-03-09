@@ -21,6 +21,13 @@ import os
 DIRNAME = os.path.dirname(os.path.abspath(__file__))
 ROOTDIR = os.path.dirname(DIRNAME)
 
+BLUE = "\033[94m"
+RESET = "\033[0m"
+
+
+def _tracknet_blue(msg: str) -> str:
+    return f"{BLUE}{msg}{RESET}"
+
 def non_max_suppression(pred_conf, pred_x, pred_y, conf_threshold=0.5, dis_tolerance=10, stride=8):
         """
         Apply non-maximum suppression (NMS) to filter out overlapping balls based on distance.
@@ -96,7 +103,7 @@ class ImageBufferPredictor:
 
         self.output_width = output_width
         self.output_height = output_height
-        print(f'[Predictor] Output size: {self.output_width}x{self.output_height}')
+        print(_tracknet_blue(f'[Predictor] Output size: {self.output_width}x{self.output_height}'))
 
         self.mqttc = mqttc
         self.data_handler = data_handler
@@ -120,7 +127,7 @@ class ImageBufferPredictor:
         self._stopper = threading.Event()
 
     def start(self):
-        print("[Predictor] Start")
+        print(_tracknet_blue("[Predictor] Start"))
         self.running = True
         self.threads = [
             threading.Thread(target=self._preprocess_loop),
@@ -131,7 +138,7 @@ class ImageBufferPredictor:
             t.start()
         for t in self.threads:
             t.join()  # 阻塞直到所有 thread 結束
-        print("[Predictor] All threads finished.")
+        print(_tracknet_blue("[Predictor] All threads finished."))
 
     def stop(self):
         self.running = False
@@ -144,11 +151,11 @@ class ImageBufferPredictor:
                 try:
                     self.infer_q.put_nowait((tensor, (fids, timestamps), self.stream_idx))
                 except queue.Full:
-                    LOGGER.warning("[Predictor] infer_q 已滿，無法放入新資料")
+                    LOGGER.warning(_tracknet_blue("[Predictor] infer_q 已滿，無法放入新資料"))
                 if not self.running:
                     self.infer_q.put(None)
             except Exception as e:
-                LOGGER.warning(f"Preprocess loop error: {e}")
+                LOGGER.warning(_tracknet_blue(f"Preprocess loop error: {e}"))
 
     def _preprocess(self) -> Tuple[torch.Tensor, List[int], List[float]]:
         frames, fids, timestamps = [], [], []
@@ -214,9 +221,9 @@ class ImageBufferPredictor:
                 try:
                     self.result_q.put_nowait((event, output, meta, stream))
                 except queue.Full:
-                    LOGGER.warning("[Predictor] result_q 已滿，無法放入新資料")
+                    LOGGER.warning(_tracknet_blue("[Predictor] result_q 已滿，無法放入新資料"))
             except Exception as e:
-                LOGGER.warning(f"Inference loop error: {e}")
+                LOGGER.warning(_tracknet_blue(f"Inference loop error: {e}"))
 
     def _postprocess_loop(self):
         while self.running:
@@ -233,10 +240,10 @@ class ImageBufferPredictor:
                     try:
                         self.result_q.put_nowait((event, output, meta, stream))
                     except queue.Full:
-                        LOGGER.warning("[Predictor] result_q 已滿，無法放入新資料")
+                        LOGGER.warning(_tracknet_blue("[Predictor] result_q 已滿，無法放入新資料"))
                     time.sleep(0.01)
             except Exception as e:
-                LOGGER.warning(f"Postprocess loop error: {e}")
+                LOGGER.warning(_tracknet_blue(f"Postprocess loop error: {e}"))
                 raise e
 
 
