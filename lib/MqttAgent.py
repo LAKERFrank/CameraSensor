@@ -8,7 +8,7 @@ import signal
 def _make_logger(layer):
     color_table = {
         "CameraLayer" : { "recv": "\033[32m", "send": "\033[92m", "general": "\033[95m" },
-        "SensingLayer": { "recv": "\033[33m", "send": "\033[93m", "general": "\033[95m" },
+        "SensingLayer": { "recv": "\033[33m", "send": "\033[93m", "tracknet": "\033[94m", "general": "\033[95m" },
         "ContentLayer": { "recv": "\033[34m", "send": "\033[94m", "general": "\033[95m" },
         "ApplicationLayer": { "recv": "\033[36m", "send": "\033[96m", "general": "\033[95m" },
     }
@@ -212,7 +212,8 @@ class DataHandler():
 
         self.client.publish(topic, bytedata, qos=self.DEFAULT_QOS if qos is None else qos)
         if short_name != "metrics" and short_name != "heartbeat":
-            self._logger(f"Published DATA '{topic}:: {payload}'", "send")
+            log_mode = "tracknet" if (self.layer == "SensingLayer" and short_name == "tracknet") else "send"
+            self._logger(f"Published DATA '{topic}:: {payload}'", log_mode)
         
     def subscribe(self, topic:str, callback, qos=None):
         
