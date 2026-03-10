@@ -47,19 +47,21 @@ class TrackNetManager:
             # tracknet_topic = f"/DATA/{self.deviceName}/SensingLayer/TrackNet"
 
             replay_path = f"{ROOTDIR}/replay/{replay_dirname}"
+            tracknet_vis_path = f"{replay_path}/tracknet"
 
             os.makedirs(replay_path, exist_ok=True)
+            os.makedirs(tracknet_vis_path, exist_ok=True)
 
             if tracknet_ver == "tracknet_v2":
                 self.tracknetThread \
                     = TrackNetMqtt(f"TrackNet_{cam_idx}", self.mqttc, self.data_handler, camera_origin_size[0],
                                    camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                                   self.imageBuffer, True, tracknet_vis_path, cam_idx)
             elif tracknet_ver == "tracknet_1000":
                 self.tracknetThread \
                     = TrackNet1000Mqtt(f"TrackNet_{cam_idx}", self.mqttc, self.data_handler, camera_origin_size[0],
                                    camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                                   self.imageBuffer, True, tracknet_vis_path, cam_idx)
             else:
                 raise Exception(f"tracknet_ver={tracknet_ver} is not acceptable.")
             self.tracknetThread.start()

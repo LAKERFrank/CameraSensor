@@ -116,6 +116,8 @@ class ImageBufferPredictor:
         self.event_pool = queue.SimpleQueue()
         self.save_pred_images = save_pred_images
         self.use_nms = use_nms
+        if self.save_pred_images and self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
         self._frame_cache = {}
 
         for _ in range(512):

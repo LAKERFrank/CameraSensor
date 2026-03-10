@@ -1,13 +1,16 @@
 import json
 import logging
+import os
 import threading
 import time
+
+import cv2
 
 from LayerSensing.Pose.PoseEngine import TensorRTPoseEngine
 
 
 class PoseMqtt(threading.Thread):
-    def __init__(self, nodename, data_handler, frame_queue, engine_path: str):
+    def __init__(self, nodename, data_handler, frame_queue, engine_path: str, vis_dir: str = "", cam_idx: int = 0):
         super().__init__(name=nodename)
         self.nodename = nodename
         self.data_handler = data_handler
@@ -17,6 +20,10 @@ class PoseMqtt(threading.Thread):
         self._counter = 0
         self._lat_acc = 0.0
         self._window_start = time.time()
+        self.vis_dir = vis_dir
+        self.cam_idx = cam_idx
+        if self.vis_dir:
+            os.makedirs(self.vis_dir, exist_ok=True)
 
     def stop(self):
         self._stopper.set()
@@ -57,6 +64,7 @@ class PoseMqtt(threading.Thread):
                         } for det in detections
                     ]
                 }
+                self._save_visualization(frame.image, frame.index, detections)
                 self.data_handler.publish('pose', json.dumps(payload))
             except Exception as e:
                 logging.error('%s infer/publish failed: %s', self.nodename, e)
@@ -75,3 +83,22 @@ class PoseMqtt(threading.Thread):
         self._window_start = now
         self._counter = 0
         self._lat_acc = 0.0
+
+    def _save_visualization(self, image, frame_id: int, detections):
+        if not self.vis_dir:
+            return
+        vis = image.copy()
+        for det in detections:
+            x, y, w, h = det.bbox_xywh
+            x1 = int(x - w / 2)
+            y1 = int(y - h / 2)
+            x2 = int(x + w / 2)
+            y2 = int(y + h / 2)
+            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            for kx, ky, kc in det.keypoints:
+                if kc < 0.3:
+                    continue
+                cv2.circle(vis, (int(kx), int(ky)), 2, (0, 200, 255), -1)
+
+        output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{frame_id:06d}.jpg")
+        cv2.imwrite(output_path, vis)

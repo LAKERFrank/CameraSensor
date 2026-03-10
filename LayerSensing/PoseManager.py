@@ -19,7 +19,9 @@ class PoseManager:
                 engine_path = f'{ROOTDIR}/LayerSensing/Pose/weights/{engine_filename}'
 
             self.distributor.activate_pose(True)
-            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path)
+            replay_path = f'{ROOTDIR}/replay/{replay_dirname}' if replay_dirname else ''
+            vis_dir = f'{replay_path}/pose' if replay_path else ''
+            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path, vis_dir, cam_idx)
             self.poseThread.start()
             return {'status': 'ready'}
         except Exception as e:
