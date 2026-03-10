@@ -86,7 +86,7 @@ def non_max_suppression(pred_conf, pred_x, pred_y, conf_threshold=0.5, dis_toler
 class ImageBufferPredictor:
     def __init__(self, weight: str, image_buffer: ImageBuffer, output_width: int = None,
                  output_height: int = None, mqttc: mqtt.Client = None, data_handler = None,
-                 cfg=DEFAULT_CFG, overrides=None, path: str = None, save_pred_images: bool = False, use_nms: bool = True):
+                 cfg=DEFAULT_CFG, overrides=None, path: str = None, save_pred_images: bool = False, use_nms: bool = True, cam_idx: int = 0):
 
         self.args = get_cfg(cfg, overrides)
         self.save_dir = path
@@ -127,6 +127,7 @@ class ImageBufferPredictor:
         self.infer_q = queue.Queue(maxsize=512)
         self.result_q = queue.Queue(maxsize=512)
         self._stopper = threading.Event()
+        self.cam_idx = cam_idx
 
     def start(self):
         print(_tracknet_blue("[Predictor] Start"))
@@ -324,7 +325,7 @@ class ImageBufferPredictor:
             
             if self.save_pred_images:
                 img = self._frame_cache.get(fid)
-                self.save_image_with_points(pred_local, img, f"{self.save_dir}/{fid}.png")
+                self.save_image_with_points(pred_local, img, f"{self.save_dir}/cam{self.cam_idx}_{fid:06d}.jpg")
 
         result = (frame_preds, metadata)
         if self.mqttc is not None:
@@ -400,6 +401,11 @@ class ImageBufferPredictor:
         pad_x = (640 - nw) // 2
         pad_y = (640 - nh) // 2
         img_vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+
+        if os.path.exists(save_path):
+            existing = cv2.imread(save_path)
+            if existing is not None and existing.shape[:2] == (640, 640):
+                img_vis = existing
 
         for x, y, conf in points:
             if conf < 0.5:

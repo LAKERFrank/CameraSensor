@@ -109,7 +109,12 @@ class PoseMqtt(threading.Thread):
         if not self.vis_dir:
             return
 
+        output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{frame_id:06d}.jpg")
         vis, scale, pad_x, pad_y = self._letterbox_to_640(image)
+        if os.path.exists(output_path):
+            existing = cv2.imread(output_path)
+            if existing is not None and existing.shape[:2] == (640, 640):
+                vis = existing
 
         fluorescent_yellow = (0, 255, 255)
         color_head = (0, 255, 0)
@@ -163,5 +168,4 @@ class PoseMqtt(threading.Thread):
                 if a in mapped_kpts and b in mapped_kpts:
                     cv2.line(vis, mapped_kpts[a], mapped_kpts[b], color_leg, 1)
 
-        output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{frame_id:06d}.jpg")
         cv2.imwrite(output_path, vis)

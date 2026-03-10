@@ -148,12 +148,17 @@ class TrackNetThread:
         pad_y = (640 - nh) // 2
         vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
 
+        output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{fid:06d}.jpg")
+        if os.path.exists(output_path):
+            existing = cv2.imread(output_path)
+            if existing is not None and existing.shape[:2] == (640, 640):
+                vis = existing
+
         if point.visibility:
             px = int(round(point.x * scale + pad_x))
             py = int(round(point.y * scale + pad_y))
             cv2.circle(vis, (px, py), 4, (0, 0, 255), -1)
 
-        output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{fid:06d}.jpg")
         cv2.imwrite(output_path, vis)
 
     def _publishPoints(self):

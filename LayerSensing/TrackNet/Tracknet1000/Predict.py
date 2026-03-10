@@ -72,6 +72,7 @@ class TrackNet1000Mqtt(threading.Thread):
             path=vis_dir or path,
             save_pred_images=bool(vis_dir),
             use_nms=True,
+            cam_idx=cam_idx,
         )
 
     def run(self):
