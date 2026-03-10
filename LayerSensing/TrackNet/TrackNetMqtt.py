@@ -134,12 +134,16 @@ class TrackNetThread:
         if not self.vis_dir:
             return
 
-        h, w = image.shape[:2]
+        src = image
+        if src.ndim == 2:
+            src = cv2.cvtColor(src, cv2.COLOR_GRAY2BGR)
+
+        h, w = src.shape[:2]
         scale = min(640.0 / max(w, 1), 640.0 / max(h, 1))
         nw = max(1, int(round(w * scale)))
         nh = max(1, int(round(h * scale)))
-        resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_LINEAR)
-        vis = np.zeros((640, 640, 3), dtype=image.dtype)
+        resized = cv2.resize(src, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        vis = np.zeros((640, 640, 3), dtype=src.dtype)
         pad_x = (640 - nw) // 2
         pad_y = (640 - nh) // 2
         vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
