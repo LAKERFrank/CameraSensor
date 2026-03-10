@@ -383,27 +383,28 @@ class ImageBufferPredictor:
         payload = {"linear": [p.toJson() for p in points]}
         self.data_handler.publish("tracknet", json.dumps(payload))
     def save_image_with_points(self, points: List[Tuple[float, float, float]], image: np.ndarray, save_path: str):
-        """
-        將點集 (x, y, conf) 繪製到影像上，並保存到指定路徑。
-        
-        Args:
-            points (List[Tuple[float, float, float]]): [(x, y, conf), ...]
-            image (np.ndarray): BGR 或灰階影像 (H, W, C) 或 (H, W)。
-            save_path (str): 儲存影像的完整路徑。
-        """
-        # 複製影像避免修改到原始
-        img_vis = image.copy()
-        if img_vis.ndim == 2:
-            img_vis = cv2.cvtColor(img_vis, cv2.COLOR_GRAY2BGR)
+        """Save tracknet points on 640x640 letterboxed image."""
+        if image is None:
+            return
+
+        src = image.copy()
+        if src.ndim == 2:
+            src = cv2.cvtColor(src, cv2.COLOR_GRAY2BGR)
+
+        h, w = src.shape[:2]
+        scale = min(640.0 / max(w, 1), 640.0 / max(h, 1))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resized = cv2.resize(src, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        img_vis = np.zeros((640, 640, 3), dtype=src.dtype)
+        pad_x = (640 - nw) // 2
+        pad_y = (640 - nh) // 2
+        img_vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
 
         for x, y, conf in points:
             if conf < 0.5:
-                color = (0, 0, 255)  # 紅色，低信心
-            else:
-                color = (0, 255, 0)  # 綠色，正常
-
-            center = (int(x), int(y))
-            print(f"[Predictor] Drawing point at {center} with confidence {conf:.2f}")
-            cv2.circle(img_vis, center, radius=3, color=color, thickness=-1)
+                continue
+            center = (int(round(x * scale + pad_x)), int(round(y * scale + pad_y)))
+            cv2.circle(img_vis, center, radius=4, color=(0, 0, 255), thickness=-1)
 
         cv2.imwrite(save_path, img_vis)

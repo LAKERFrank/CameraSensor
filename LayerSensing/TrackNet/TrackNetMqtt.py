@@ -133,9 +133,22 @@ class TrackNetThread:
     def _save_visualization(self, image, fid: int, point: Point):
         if not self.vis_dir:
             return
-        vis = image.copy()
+
+        h, w = image.shape[:2]
+        scale = min(640.0 / max(w, 1), 640.0 / max(h, 1))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        vis = np.zeros((640, 640, 3), dtype=image.dtype)
+        pad_x = (640 - nw) // 2
+        pad_y = (640 - nh) // 2
+        vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+
         if point.visibility:
-            cv2.circle(vis, (int(point.x), int(point.y)), 6, (0, 255, 0), 2)
+            px = int(round(point.x * scale + pad_x))
+            py = int(round(point.y * scale + pad_y))
+            cv2.circle(vis, (px, py), 4, (0, 0, 255), -1)
+
         output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{fid:06d}.jpg")
         cv2.imwrite(output_path, vis)
 

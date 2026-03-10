@@ -5,6 +5,7 @@ import threading
 import time
 
 import cv2
+import numpy as np
 
 from LayerSensing.Pose.PoseEngine import TensorRTPoseEngine
 
@@ -84,21 +85,79 @@ class PoseMqtt(threading.Thread):
         self._counter = 0
         self._lat_acc = 0.0
 
+    def _letterbox_to_640(self, image):
+        h, w = image.shape[:2]
+        scale = min(640.0 / max(w, 1), 640.0 / max(h, 1))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_LINEAR)
+
+        canvas = np.zeros((640, 640, 3), dtype=image.dtype)
+        pad_x = (640 - nw) // 2
+        pad_y = (640 - nh) // 2
+        canvas[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+        return canvas, scale, pad_x, pad_y
+
+    def _map_point(self, x, y, scale, pad_x, pad_y):
+        return int(round(x * scale + pad_x)), int(round(y * scale + pad_y))
+
     def _save_visualization(self, image, frame_id: int, detections):
         if not self.vis_dir:
             return
-        vis = image.copy()
+
+        vis, scale, pad_x, pad_y = self._letterbox_to_640(image)
+
+        fluorescent_yellow = (0, 255, 255)
+        color_head = (0, 255, 0)
+        color_arm = (255, 128, 0)
+        color_body = (255, 0, 255)
+        color_leg = (0, 165, 255)
+
+        head = {0, 1, 2, 3, 4}
+        arms = {5, 6, 7, 8, 9, 10}
+        body = {11, 12}
+        legs = {13, 14, 15, 16}
+
         for det in detections:
             x, y, w, h = det.bbox_xywh
-            x1 = int(x - w / 2)
-            y1 = int(y - h / 2)
-            x2 = int(x + w / 2)
-            y2 = int(y + h / 2)
-            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            for kx, ky, kc in det.keypoints:
+            x1, y1 = self._map_point(x - w / 2, y - h / 2, scale, pad_x, pad_y)
+            x2, y2 = self._map_point(x + w / 2, y + h / 2, scale, pad_x, pad_y)
+            cv2.rectangle(vis, (x1, y1), (x2, y2), fluorescent_yellow, 1)
+
+            mapped_kpts = {}
+            for idx, (kx, ky, kc) in enumerate(det.keypoints):
                 if kc < 0.3:
                     continue
-                cv2.circle(vis, (int(kx), int(ky)), 2, (0, 200, 255), -1)
+                px, py = self._map_point(kx, ky, scale, pad_x, pad_y)
+                mapped_kpts[idx] = (px, py)
+                if idx in head:
+                    color = color_head
+                elif idx in arms:
+                    color = color_arm
+                elif idx in body:
+                    color = color_body
+                elif idx in legs:
+                    color = color_leg
+                else:
+                    color = (255, 255, 255)
+                cv2.circle(vis, (px, py), 2, color, -1)
+
+            head_edges = [(0, 1), (0, 2), (1, 3), (2, 4)]
+            arm_edges = [(5, 7), (7, 9), (6, 8), (8, 10), (5, 6)]
+            body_edges = [(5, 11), (6, 12), (11, 12)]
+            leg_edges = [(11, 13), (13, 15), (12, 14), (14, 16)]
+            for a, b in head_edges:
+                if a in mapped_kpts and b in mapped_kpts:
+                    cv2.line(vis, mapped_kpts[a], mapped_kpts[b], color_head, 1)
+            for a, b in arm_edges:
+                if a in mapped_kpts and b in mapped_kpts:
+                    cv2.line(vis, mapped_kpts[a], mapped_kpts[b], color_arm, 1)
+            for a, b in body_edges:
+                if a in mapped_kpts and b in mapped_kpts:
+                    cv2.line(vis, mapped_kpts[a], mapped_kpts[b], color_body, 1)
+            for a, b in leg_edges:
+                if a in mapped_kpts and b in mapped_kpts:
+                    cv2.line(vis, mapped_kpts[a], mapped_kpts[b], color_leg, 1)
 
         output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{frame_id:06d}.jpg")
         cv2.imwrite(output_path, vis)
