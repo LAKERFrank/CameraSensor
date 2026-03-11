@@ -86,7 +86,7 @@ def non_max_suppression(pred_conf, pred_x, pred_y, conf_threshold=0.5, dis_toler
 class ImageBufferPredictor:
     def __init__(self, weight: str, image_buffer: ImageBuffer, output_width: int = None,
                  output_height: int = None, mqttc: mqtt.Client = None, data_handler = None,
-                 cfg=DEFAULT_CFG, overrides=None, path: str = None, save_pred_images: bool = False, use_nms: bool = True):
+                 cfg=DEFAULT_CFG, overrides=None, path: str = None, save_pred_images: bool = False, use_nms: bool = True, cam_idx: int = 0):
 
         self.args = get_cfg(cfg, overrides)
         self.save_dir = path
@@ -116,6 +116,8 @@ class ImageBufferPredictor:
         self.event_pool = queue.SimpleQueue()
         self.save_pred_images = save_pred_images
         self.use_nms = use_nms
+        if self.save_pred_images and self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
         self._frame_cache = {}
 
         for _ in range(512):
@@ -125,6 +127,7 @@ class ImageBufferPredictor:
         self.infer_q = queue.Queue(maxsize=512)
         self.result_q = queue.Queue(maxsize=512)
         self._stopper = threading.Event()
+        self.cam_idx = cam_idx
 
     def start(self):
         print(_tracknet_blue("[Predictor] Start"))
@@ -322,7 +325,7 @@ class ImageBufferPredictor:
             
             if self.save_pred_images:
                 img = self._frame_cache.get(fid)
-                self.save_image_with_points(pred_local, img, f"{self.save_dir}/{fid}.png")
+                self.save_image_with_points(pred_local, img, f"{self.save_dir}/cam{self.cam_idx}_{fid:06d}.jpg")
 
         result = (frame_preds, metadata)
         if self.mqttc is not None:
@@ -381,27 +384,33 @@ class ImageBufferPredictor:
         payload = {"linear": [p.toJson() for p in points]}
         self.data_handler.publish("tracknet", json.dumps(payload))
     def save_image_with_points(self, points: List[Tuple[float, float, float]], image: np.ndarray, save_path: str):
-        """
-        將點集 (x, y, conf) 繪製到影像上，並保存到指定路徑。
-        
-        Args:
-            points (List[Tuple[float, float, float]]): [(x, y, conf), ...]
-            image (np.ndarray): BGR 或灰階影像 (H, W, C) 或 (H, W)。
-            save_path (str): 儲存影像的完整路徑。
-        """
-        # 複製影像避免修改到原始
-        img_vis = image.copy()
-        if img_vis.ndim == 2:
-            img_vis = cv2.cvtColor(img_vis, cv2.COLOR_GRAY2BGR)
+        """Save tracknet points on 640x640 letterboxed image."""
+        if image is None:
+            return
+
+        src = image.copy()
+        if src.ndim == 2:
+            src = cv2.cvtColor(src, cv2.COLOR_GRAY2BGR)
+
+        h, w = src.shape[:2]
+        scale = min(640.0 / max(w, 1), 640.0 / max(h, 1))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resized = cv2.resize(src, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        img_vis = np.zeros((640, 640, 3), dtype=src.dtype)
+        pad_x = (640 - nw) // 2
+        pad_y = (640 - nh) // 2
+        img_vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+
+        if os.path.exists(save_path):
+            existing = cv2.imread(save_path)
+            if existing is not None and existing.shape[:2] == (640, 640):
+                img_vis = existing
 
         for x, y, conf in points:
             if conf < 0.5:
-                color = (0, 0, 255)  # 紅色，低信心
-            else:
-                color = (0, 255, 0)  # 綠色，正常
-
-            center = (int(x), int(y))
-            print(f"[Predictor] Drawing point at {center} with confidence {conf:.2f}")
-            cv2.circle(img_vis, center, radius=3, color=color, thickness=-1)
+                continue
+            center = (int(round(x * scale + pad_x)), int(round(y * scale + pad_y)))
+            cv2.circle(img_vis, center, radius=4, color=(0, 0, 255), thickness=-1)
 
         cv2.imwrite(save_path, img_vis)

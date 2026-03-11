@@ -52,7 +52,7 @@ class TrackNetThread:
     def __init__(self, device:str, model:TrackNet10, mqttc:mqtt.Client,
                  data_handler, blacklist,
                  output_width:int, output_height:int,
-                 csv_writer:CSVWriter):
+                 csv_writer:CSVWriter, vis_dir: str = "", cam_idx: int = 0):
 
         self.images = []
         self.fids = []
@@ -66,6 +66,10 @@ class TrackNetThread:
         self.csv_writer = csv_writer
         self.mqttc = mqttc
         self.data_handler = data_handler
+        self.vis_dir = vis_dir
+        self.cam_idx = cam_idx
+        if self.vis_dir:
+            os.makedirs(self.vis_dir, exist_ok=True)
         # wait for new image
         self.isProcessing = False
 
@@ -120,9 +124,42 @@ class TrackNetThread:
             if self.csv_writer is not None:
                 self.csv_writer.writePoints(point)
 
+            self._save_visualization(image, fid, point)
+
         if self.mqttc is not None:
             self.points = removeOutliers(self.points)
             self._publishPoints()
+
+    def _save_visualization(self, image, fid: int, point: Point):
+        if not self.vis_dir:
+            return
+
+        src = image
+        if src.ndim == 2:
+            src = cv2.cvtColor(src, cv2.COLOR_GRAY2BGR)
+
+        h, w = src.shape[:2]
+        scale = min(640.0 / max(w, 1), 640.0 / max(h, 1))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resized = cv2.resize(src, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        vis = np.zeros((640, 640, 3), dtype=src.dtype)
+        pad_x = (640 - nw) // 2
+        pad_y = (640 - nh) // 2
+        vis[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+
+        output_path = os.path.join(self.vis_dir, f"cam{self.cam_idx}_{fid:06d}.jpg")
+        if os.path.exists(output_path):
+            existing = cv2.imread(output_path)
+            if existing is not None and existing.shape[:2] == (640, 640):
+                vis = existing
+
+        if point.visibility:
+            px = int(round(point.x * scale + pad_x))
+            py = int(round(point.y * scale + pad_y))
+            cv2.circle(vis, (px, py), 4, (0, 0, 255), -1)
+
+        cv2.imwrite(output_path, vis)
 
     def _publishPoints(self):
         payload = {"linear": [p.toJson() for p in self.points]}
@@ -148,7 +185,7 @@ class TrackNetMqtt(threading.Thread):
     def __init__(self, nodename, mqttc:mqtt.Client, data_handler,
                  camera_origin_width:int, camera_origin_height:int,
                  path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+                 imgbuf: ImageBuffer, save_csv=True, vis_dir: str = "", cam_idx: int = 0):
         """_summary_
 
         Args:
@@ -184,6 +221,10 @@ class TrackNetMqtt(threading.Thread):
             self.csv_writer = None
 
         self._stopper = threading.Event()
+        self.vis_dir = vis_dir
+        self.cam_idx = cam_idx
+        if self.vis_dir:
+            os.makedirs(self.vis_dir, exist_ok=True)
 
     def stop(self):
         self._stopper.set()  
@@ -216,7 +257,9 @@ class TrackNetMqtt(threading.Thread):
                                         blacklist=[],
                                         output_width=self.camera_origin_width,
                                         output_height=self.camera_origin_height,
-                                        csv_writer=self.csv_writer)
+                                        csv_writer=self.csv_writer,
+                                        vis_dir=self.vis_dir,
+                                        cam_idx=self.cam_idx)
 
         while not self._stopped():
 
