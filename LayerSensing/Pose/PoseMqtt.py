@@ -27,31 +27,39 @@ class PoseMqtt(threading.Thread):
             return
         with open(self.output_csv, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow([
-                'frame_id', 'timestamp', 'det_index',
-                'bbox_cx', 'bbox_cy', 'bbox_w', 'bbox_h', 'bbox_conf',
-                'kp_index', 'kp_x', 'kp_y', 'kp_conf'
-            ])
+            header = ['frame_id', 'timestamp', 'bbox_x', 'bbox_y', 'bbox_w', 'bbox_h', 'bbox_conf']
+            for kp_idx in range(17):
+                header.extend([f'kpt{kp_idx}_x', f'kpt{kp_idx}_y'])
+            writer.writerow(header)
 
     def _append_pose_csv(self, payload):
         rows = []
         frame_id = payload.get('frame_id')
         timestamp = payload.get('timestamp')
-        for det_idx, det in enumerate(payload.get('detections', [])):
-            bbox = det.get('bbox_xywh', [None, None, None, None])
+
+        detections = payload.get('detections', [])
+        for det in detections:
+            bbox = list(det.get('bbox_xywh', [None, None, None, None]))
+            if len(bbox) < 4:
+                bbox.extend([None] * (4 - len(bbox)))
+            bbox = bbox[:4]
             bbox_conf = det.get('bbox_conf')
+
+            flat_kpts = []
             keypoints = det.get('keypoints', [])
-            if not keypoints:
-                rows.append([frame_id, timestamp, det_idx, *bbox[:4], bbox_conf, None, None, None, None])
-                continue
-            for kp_idx, kp in enumerate(keypoints):
-                kp_vals = list(kp) if isinstance(kp, (list, tuple)) else [None, None, None]
-                if len(kp_vals) < 3:
-                    kp_vals.extend([None] * (3 - len(kp_vals)))
-                rows.append([frame_id, timestamp, det_idx, *bbox[:4], bbox_conf, kp_idx, kp_vals[0], kp_vals[1], kp_vals[2]])
+            for kp_idx in range(17):
+                if kp_idx < len(keypoints) and isinstance(keypoints[kp_idx], (list, tuple)):
+                    kp = list(keypoints[kp_idx])
+                    x = kp[0] if len(kp) > 0 else None
+                    y = kp[1] if len(kp) > 1 else None
+                else:
+                    x, y = None, None
+                flat_kpts.extend([x, y])
+
+            rows.append([frame_id, timestamp, *bbox, bbox_conf, *flat_kpts])
 
         if not rows:
-            rows.append([frame_id, timestamp, None, None, None, None, None, None, None, None, None, None])
+            rows.append([frame_id, timestamp, None, None, None, None, None, *([None] * 34)])
 
         with open(self.output_csv, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
