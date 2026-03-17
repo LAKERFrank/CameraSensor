@@ -18,8 +18,12 @@ class PoseManager:
             if not os.path.isabs(engine_path):
                 engine_path = f'{ROOTDIR}/LayerSensing/Pose/weights/{engine_filename}'
 
+            replay_path = f"{ROOTDIR}/replay/{replay_dirname}" if replay_dirname else f"{ROOTDIR}/replay"
+            os.makedirs(replay_path, exist_ok=True)
+            output_csv = os.path.join(replay_path, f'Pose_{cam_idx}.csv')
+
             self.distributor.activate_pose(True)
-            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path)
+            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path, output_csv)
             self.poseThread.start()
             return {'status': 'ready'}
         except Exception as e:
