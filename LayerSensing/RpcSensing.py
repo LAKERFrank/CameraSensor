@@ -44,7 +44,8 @@ class RpcSensing(RemoteProcedureCall):
     def startPose(self, camera_origin_size:'tuple[int, int]' = (640, 480),
                   engine_filename: str = "int8.engine",
                   replay_dirname: str = "",
-                  cam_idx: int = 0):
+                  cam_idx: int = 0,
+                  source_video_path: str = ""):
         """Start Pose thread
 
         Args:
@@ -52,6 +53,7 @@ class RpcSensing(RemoteProcedureCall):
             engine_filename (str): TensorRT engine filename or absolute path.
             replay_dirname (str): 儲存資料夾名稱 (目前保留欄位，便於和 TrackNet 對齊)
             cam_idx (int): 相機編號 (目前保留欄位，便於和 TrackNet 對齊)
+            source_video_path (str): 來源影片路徑；提供時 CSV 會存到影片所在資料夾。
 
         Returns:
             dict: 狀態
@@ -60,7 +62,8 @@ class RpcSensing(RemoteProcedureCall):
                                    camera_origin_size=camera_origin_size,
                                    engine_filename=engine_filename,
                                    replay_dirname=replay_dirname,
-                                   cam_idx=cam_idx)
+                                   cam_idx=cam_idx,
+                                   source_video_path=source_video_path)
 
     def stopPose(self):
         """Stop Pose thread
