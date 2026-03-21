@@ -135,7 +135,8 @@ class PoseMqtt(threading.Thread):
                     ]
                 }
                 self.data_handler.publish('pose', json.dumps(payload))
-                self._append_pose_csv(payload, frame.width, frame.height)
+                frame_height, frame_width = frame.image.shape[:2]
+                self._append_pose_csv(payload, frame_width, frame_height)
             except Exception as e:
                 logging.error('%s infer/publish failed: %s', self.nodename, e)
             finally:
