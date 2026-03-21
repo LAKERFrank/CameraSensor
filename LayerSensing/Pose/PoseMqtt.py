@@ -1,6 +1,7 @@
 import csv
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -32,38 +33,66 @@ class PoseMqtt(threading.Thread):
                 header.extend([f'kpt{kp_idx}_x', f'kpt{kp_idx}_y'])
             writer.writerow(header)
 
-    def _append_pose_csv(self, payload):
-        rows = []
+    def _normalize_coord(self, value, size):
+        if value is None or size in (None, 0):
+            return None
+        try:
+            value = float(value)
+            size = float(size)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(value) or math.isnan(size):
+            return None
+        return value / size
+
+    def _append_pose_csv(self, payload, frame_width, frame_height):
         frame_id = payload.get('frame_id')
         timestamp = payload.get('timestamp')
-
         detections = payload.get('detections', [])
+
+        best_det = None
+        best_conf = float('-inf')
         for det in detections:
-            bbox = list(det.get('bbox_xywh', [None, None, None, None]))
+            conf = det.get('bbox_conf')
+            try:
+                score = float(conf)
+            except (TypeError, ValueError):
+                score = float('-inf')
+            if best_det is None or score > best_conf:
+                best_det = det
+                best_conf = score
+
+        if best_det is None:
+            row = [frame_id, timestamp, None, None, None, None, None, *([None] * 34)]
+        else:
+            bbox = list(best_det.get('bbox_xywh', [None, None, None, None]))
             if len(bbox) < 4:
                 bbox.extend([None] * (4 - len(bbox)))
             bbox = bbox[:4]
-            bbox_conf = det.get('bbox_conf')
+            norm_bbox = [
+                self._normalize_coord(bbox[0], frame_width),
+                self._normalize_coord(bbox[1], frame_height),
+                self._normalize_coord(bbox[2], frame_width),
+                self._normalize_coord(bbox[3], frame_height),
+            ]
+            bbox_conf = best_det.get('bbox_conf')
 
             flat_kpts = []
-            keypoints = det.get('keypoints', [])
+            keypoints = best_det.get('keypoints', [])
             for kp_idx in range(17):
                 if kp_idx < len(keypoints) and isinstance(keypoints[kp_idx], (list, tuple)):
                     kp = list(keypoints[kp_idx])
-                    x = kp[0] if len(kp) > 0 else None
-                    y = kp[1] if len(kp) > 1 else None
+                    x = self._normalize_coord(kp[0] if len(kp) > 0 else None, frame_width)
+                    y = self._normalize_coord(kp[1] if len(kp) > 1 else None, frame_height)
                 else:
                     x, y = None, None
                 flat_kpts.extend([x, y])
 
-            rows.append([frame_id, timestamp, *bbox, bbox_conf, *flat_kpts])
-
-        if not rows:
-            rows.append([frame_id, timestamp, None, None, None, None, None, *([None] * 34)])
+            row = [frame_id, timestamp, *norm_bbox, bbox_conf, *flat_kpts]
 
         with open(self.output_csv, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerows(rows)
+            writer.writerow(row)
 
     def stop(self):
         self._stopper.set()
@@ -106,7 +135,7 @@ class PoseMqtt(threading.Thread):
                     ]
                 }
                 self.data_handler.publish('pose', json.dumps(payload))
-                self._append_pose_csv(payload)
+                self._append_pose_csv(payload, frame.width, frame.height)
             except Exception as e:
                 logging.error('%s infer/publish failed: %s', self.nodename, e)
             finally:
