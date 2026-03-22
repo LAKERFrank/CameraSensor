@@ -37,7 +37,7 @@ class PoseMqtt(threading.Thread):
             frame = self.frame_queue.pop(True)
             try:
                 if frame.is_eos:
-                    self.data_handler.publish('pose', json.dumps({'detections': [], 'EOF': True}))
+                    self.data_handler.publish('pose', json.dumps({'frame_id': frame.index, 'timestamp': frame.monotonic_timestamp, 'bbox': [], 'kpts': [], 'EOF': True}))
                     logging.info('%s EOF reached', self.nodename)
                     break
 
@@ -48,19 +48,8 @@ class PoseMqtt(threading.Thread):
                 self._counter += 1
                 self._log_perf(latency_ms)
 
-                payload = {
-                    'frame_id': frame.index,
-                    'timestamp': frame.monotonic_timestamp,
-                    'bbox_format': 'pixel_xywh_center',
-                    'keypoint_format': 'pixel_xyc_17',
-                    'detections': [
-                        {
-                            'bbox_xywh': det.bbox_xywh,
-                            'bbox_conf': det.bbox_conf,
-                            'keypoints': det.keypoints,
-                        } for det in detections
-                    ]
-                }
+                best_det = detections[0] if detections else None
+                payload = self._build_payload(frame, best_det)
                 self.data_handler.publish('pose', json.dumps(payload))
                 self._save_visualization(frame, detections)
             except Exception as e:
@@ -69,6 +58,36 @@ class PoseMqtt(threading.Thread):
                 frame.release()
 
         logging.info('%s pipeline stopped', self.nodename)
+
+    def _build_payload(self, frame, detection):
+        h, w = frame.image.shape[:2]
+        payload = {
+            'frame_id': frame.index,
+            'timestamp': frame.monotonic_timestamp,
+            'bbox': [],
+            'kpts': [],
+        }
+        if detection is None:
+            return payload
+
+        cx, cy, bw, bh = detection.bbox_xywh
+        payload['bbox'] = [
+            float(min(max(cx / w, 0.0), 1.0)) if w else 0.0,
+            float(min(max(cy / h, 0.0), 1.0)) if h else 0.0,
+            float(min(max(bw / w, 0.0), 1.0)) if w else 0.0,
+            float(min(max(bh / h, 0.0), 1.0)) if h else 0.0,
+            float(detection.bbox_conf),
+        ]
+        payload['kpts'] = [
+            [
+                float(min(max(x / w, 0.0), 1.0)) if w else 0.0,
+                float(min(max(y / h, 0.0), 1.0)) if h else 0.0,
+            ]
+            for x, y, _ in detection.keypoints[:17]
+        ]
+        while len(payload['kpts']) < 17:
+            payload['kpts'].append([0.0, 0.0])
+        return payload
 
     def _save_visualization(self, frame, detections):
         if not self.vis_dir:
