@@ -1,18 +1,22 @@
 import json
 import logging
+import os
 import threading
 import time
+
+import cv2
 
 from LayerSensing.Pose.PoseEngine import TensorRTPoseEngine
 
 
 class PoseMqtt(threading.Thread):
-    def __init__(self, nodename, data_handler, frame_queue, engine_path: str):
+    def __init__(self, nodename, data_handler, frame_queue, engine_path: str, vis_dir: str = None):
         super().__init__(name=nodename)
         self.nodename = nodename
         self.data_handler = data_handler
         self.frame_queue = frame_queue
         self.engine = TensorRTPoseEngine(engine_path=engine_path)
+        self.vis_dir = vis_dir
         self._stopper = threading.Event()
         self._counter = 0
         self._lat_acc = 0.0
@@ -58,12 +62,45 @@ class PoseMqtt(threading.Thread):
                     ]
                 }
                 self.data_handler.publish('pose', json.dumps(payload))
+                self._save_visualization(frame, detections)
             except Exception as e:
                 logging.error('%s infer/publish failed: %s', self.nodename, e)
             finally:
                 frame.release()
 
         logging.info('%s pipeline stopped', self.nodename)
+
+    def _save_visualization(self, frame, detections):
+        if not self.vis_dir:
+            return
+
+        image = frame.image
+        if image is None:
+            return
+
+        if image.ndim == 2:
+            vis = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        elif image.ndim == 3 and image.shape[2] == 1:
+            vis = cv2.cvtColor(image[:, :, 0], cv2.COLOR_GRAY2BGR)
+        else:
+            vis = image.copy()
+
+        for det in detections:
+            cx, cy, w, h = det.bbox_xywh
+            x1 = int(max(cx - w / 2.0, 0))
+            y1 = int(max(cy - h / 2.0, 0))
+            x2 = int(min(cx + w / 2.0, vis.shape[1] - 1))
+            y2 = int(min(cy + h / 2.0, vis.shape[0] - 1))
+            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            for x, y, kconf in det.keypoints:
+                if kconf <= 0:
+                    continue
+                cv2.circle(vis, (int(x), int(y)), 2, (0, 255, 255), -1)
+
+        os.makedirs(self.vis_dir, exist_ok=True)
+        save_path = os.path.join(self.vis_dir, f'{frame.index}.png')
+        cv2.imwrite(save_path, vis)
 
     def _log_perf(self, latency_ms: float):
         now = time.time()

@@ -90,7 +90,8 @@ class ImageBufferPredictor:
 
         self.args = get_cfg(cfg, overrides)
         self.save_dir = path
-        weight = f"{ROOTDIR}/Tracknet1000/weights/best.pt"
+        if self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
         self.model = AutoBackend(weight,
                                  device=select_device(self.args.device, verbose=False),
                                  dnn=self.args.dnn,
