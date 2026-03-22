@@ -43,7 +43,7 @@ def main():
     ret = sensing.startTrackNet((args.camera_width, args.camera_height), args.tracknet_ver, args.tracknet_weights, replay_dirname, args.cam_idx)
     print(f"TrackNet: {ret}")
 
-    pose_ret = sensing.startPose((args.camera_width, args.camera_height), args.pose_engine, replay_dirname, args.cam_idx)
+    pose_ret = sensing.startPose((args.camera_width, args.camera_height), args.pose_engine, replay_dirname, args.cam_idx, args.video)
     print(f"Pose: {pose_ret}")
 
     duration = camera.startVideoFeeder(args.video)
