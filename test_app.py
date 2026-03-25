@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("--tracknet_ver", default="tracknet_v2")
     parser.add_argument("--tracknet_weights", default="no114_30.tar")
     parser.add_argument("--pose_engine", default="int8.engine")
+    parser.add_argument("--pose_engine_version", default="batch1", choices=["batch1", "batch3"])
     parser.add_argument("--cam_idx", type=int, default=0)
     parser.add_argument("--camera_width", type=int, default=640)
     parser.add_argument("--camera_height", type=int, default=480)
@@ -43,7 +44,13 @@ def main():
     ret = sensing.startTrackNet((args.camera_width, args.camera_height), args.tracknet_ver, args.tracknet_weights, replay_dirname, args.cam_idx)
     print(f"TrackNet: {ret}")
 
-    pose_ret = sensing.startPose((args.camera_width, args.camera_height), args.pose_engine, replay_dirname, args.cam_idx)
+    pose_ret = sensing.startPose(
+        (args.camera_width, args.camera_height),
+        engine_version=args.pose_engine_version,
+        engine_filename=args.pose_engine,
+        replay_dirname=replay_dirname,
+        cam_idx=args.cam_idx,
+    )
     print(f"Pose: {pose_ret}")
 
     duration = camera.startVideoFeeder(args.video)

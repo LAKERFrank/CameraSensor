@@ -10,13 +10,14 @@ from LayerSensing.Pose.PoseEngine import TensorRTPoseEngine
 
 
 class PoseMqtt(threading.Thread):
-    def __init__(self, nodename, data_handler, frame_queue, engine_path: str, vis_dir: str = None):
+    def __init__(self, nodename, data_handler, frame_queue, engine_path: str, vis_dir: str = None, batch_size: int = 1):
         super().__init__(name=nodename)
         self.nodename = nodename
         self.data_handler = data_handler
         self.frame_queue = frame_queue
         self.engine = TensorRTPoseEngine(engine_path=engine_path)
         self.vis_dir = vis_dir
+        self.batch_size = max(int(batch_size), 1)
         self._stopper = threading.Event()
         self._counter = 0
         self._lat_acc = 0.0
@@ -33,31 +34,53 @@ class PoseMqtt(threading.Thread):
             logging.error('%s failed to load pose engine, pipeline stopped.', self.nodename)
             return
         logging.info('%s pipeline started', self.nodename)
+        pending_frames = []
         while not self._stopped():
             frame = self.frame_queue.pop(True)
             try:
                 if frame.is_eos:
+                    if pending_frames:
+                        self._process_batch(pending_frames)
+                        pending_frames = []
                     self.data_handler.publish('pose', json.dumps({'frame_id': frame.index, 'timestamp': frame.monotonic_timestamp, 'bbox': [], 'kpts': [], 'EOF': True}))
                     logging.info('%s EOF reached', self.nodename)
                     break
 
-                t0 = time.perf_counter()
-                detections = self.engine.infer(frame.image)
-                latency_ms = (time.perf_counter() - t0) * 1000.0
-                self._lat_acc += latency_ms
-                self._counter += 1
-                self._log_perf(latency_ms)
+                if self.batch_size == 1:
+                    self._process_batch([frame])
+                    continue
 
+                pending_frames.append(frame)
+                if len(pending_frames) >= self.batch_size:
+                    self._process_batch(pending_frames)
+                    pending_frames = []
+            except Exception as e:
+                logging.error('%s infer/publish failed: %s', self.nodename, e)
+                frame.release()
+
+        for pending in pending_frames:
+            pending.release()
+
+        logging.info('%s pipeline stopped', self.nodename)
+
+    def _process_batch(self, frames):
+        try:
+            t0 = time.perf_counter()
+            batch_detections = self.engine.infer_batch([f.image for f in frames])
+            latency_ms = (time.perf_counter() - t0) * 1000.0
+            self._lat_acc += latency_ms
+            self._counter += len(frames)
+            self._log_perf(latency_ms)
+
+            for idx, frame in enumerate(frames):
+                detections = batch_detections[idx] if idx < len(batch_detections) else []
                 best_det = detections[0] if detections else None
                 payload = self._build_payload(frame, best_det)
                 self.data_handler.publish('pose', json.dumps(payload))
                 self._save_visualization(frame, detections)
-            except Exception as e:
-                logging.error('%s infer/publish failed: %s', self.nodename, e)
-            finally:
+        finally:
+            for frame in frames:
                 frame.release()
-
-        logging.info('%s pipeline stopped', self.nodename)
 
     def _build_payload(self, frame, detection):
         h, w = frame.image.shape[:2]
