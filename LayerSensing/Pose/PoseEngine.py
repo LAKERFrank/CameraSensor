@@ -67,11 +67,31 @@ class TensorRTPoseEngine:
         return True
 
     def infer(self, image: np.ndarray) -> List[PoseDetection]:
+        batch_result = self.infer_batch([image])
+        return batch_result[0] if batch_result else []
+
+    def infer_batch(self, images: List[np.ndarray]) -> List[List[PoseDetection]]:
         if not self._load_ok:
+            return [[] for _ in images]
+        if len(images) == 0:
             return []
-        input_tensor, ratio, pad = self._preprocess(image)
+
+        input_tensors = []
+        preprocess_infos = []
+        for image in images:
+            input_tensor, ratio, pad = self._preprocess(image)
+            input_tensors.append(input_tensor[0])
+            preprocess_infos.append((image.shape[:2], ratio, pad))
+
+        input_tensor = np.stack(input_tensors, axis=0)
         raw = self._execute_trt(input_tensor)
-        return self._postprocess(raw, image.shape[:2], ratio, pad)
+        batch_raw = self._split_batch_raw(raw, expected_batch=len(images))
+
+        outputs = []
+        for idx, (orig_shape, ratio, pad) in enumerate(preprocess_infos):
+            per_raw = batch_raw[idx] if idx < len(batch_raw) else np.empty((0, 57), dtype=np.float32)
+            outputs.append(self._postprocess(per_raw, orig_shape, ratio, pad))
+        return outputs
 
     def _discover_io_names(self):
         input_name = None
@@ -127,7 +147,24 @@ class TensorRTPoseEngine:
         output_arrays = [item['host'].reshape(item['shape']) for item in io if not item['is_input']]
         if len(output_arrays) == 0:
             return np.empty((0, 57), dtype=np.float32)
-        return self._decode_raw_output(output_arrays[0])
+        return np.asarray(output_arrays[0], dtype=np.float32)
+
+    def _split_batch_raw(self, raw: np.ndarray, expected_batch: int) -> List[np.ndarray]:
+        raw = np.asarray(raw)
+        if raw.ndim == 0:
+            return [np.empty((0, 57), dtype=np.float32) for _ in range(expected_batch)]
+        if raw.ndim == 2:
+            return [self._decode_raw_output(raw) for _ in range(expected_batch)]
+        if raw.ndim == 3:
+            if raw.shape[0] == expected_batch:
+                return [self._decode_raw_output(raw[i]) for i in range(expected_batch)]
+            if raw.shape[0] == 1 and expected_batch == 1:
+                return [self._decode_raw_output(raw[0])]
+            if raw.shape[1] == expected_batch:
+                return [self._decode_raw_output(raw[:, i, :]) for i in range(expected_batch)]
+
+        decoded = self._decode_raw_output(raw)
+        return [decoded for _ in range(expected_batch)]
 
     def _prepare_io_buffers(self, input_tensor: np.ndarray):
         io = []

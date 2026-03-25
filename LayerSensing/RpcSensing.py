@@ -42,14 +42,16 @@ class RpcSensing(RemoteProcedureCall):
         return self._call_rpc_sync("TrackNet/stopDatafeeder")
 
     def startPose(self, camera_origin_size:'tuple[int, int]' = (640, 480),
-                  engine_filename: str = "int8.engine",
+                  engine_version: str = "batch1",
+                  engine_filename: str = "",
                   replay_dirname: str = "",
                   cam_idx: int = 0):
         """Start Pose thread
 
         Args:
             camera_origin_size (tuple[int, int]): 相機原始解析度 (目前保留欄位，便於和 TrackNet 對齊)
-            engine_filename (str): TensorRT engine filename or absolute path.
+            engine_version (str): 引擎版本，支援 "batch1" 或 "batch3"。
+            engine_filename (str): TensorRT engine filename or absolute path，留空字串時依版本使用預設權重。
             replay_dirname (str): 儲存資料夾名稱 (目前保留欄位，便於和 TrackNet 對齊)
             cam_idx (int): 相機編號 (目前保留欄位，便於和 TrackNet 對齊)
 
@@ -58,6 +60,7 @@ class RpcSensing(RemoteProcedureCall):
         """
         return self._call_rpc_sync("Pose/start",
                                    camera_origin_size=camera_origin_size,
+                                   engine_version=engine_version,
                                    engine_filename=engine_filename,
                                    replay_dirname=replay_dirname,
                                    cam_idx=cam_idx)
