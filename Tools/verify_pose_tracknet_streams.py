@@ -67,8 +67,8 @@ def main() -> int:
             stats.pose_msgs += 1
             if "frame_id" in data:
                 stats.pose_frames.append(int(data["frame_id"]))
-            bbox = data.get("bbox", [])
-            if len(bbox) == 0:
+            detections = data.get("detection", [])
+            if len(detections) == 0:
                 stats.pose_empty_det_msgs += 1
             else:
                 stats.pose_nonempty_det_msgs += 1
