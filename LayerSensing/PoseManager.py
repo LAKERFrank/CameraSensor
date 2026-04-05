@@ -8,6 +8,7 @@ class PoseManager:
     DEFAULT_ENGINE_BY_VERSION = {
         'batch1': 'int8.engine',
         'batch3': 'int8_batch3.engine',
+        'batch10': 'int8_batch10.engine',
     }
 
     def __init__(self, data_handler, distributor):
@@ -39,7 +40,8 @@ class PoseManager:
             os.makedirs(pose_vis_dir, exist_ok=True)
 
             self.distributor.activate_pose(True)
-            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path, pose_vis_dir, batch_size=1 if version == 'batch1' else 3)
+            batch_size = {'batch1': 1, 'batch3': 3, 'batch10': 10}[version]
+            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path, pose_vis_dir, batch_size=batch_size)
             self.poseThread.start()
             return {'status': 'ready'}
         except Exception as e:

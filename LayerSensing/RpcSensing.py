@@ -50,7 +50,7 @@ class RpcSensing(RemoteProcedureCall):
 
         Args:
             camera_origin_size (tuple[int, int]): 相機原始解析度 (目前保留欄位，便於和 TrackNet 對齊)
-            engine_version (str): 引擎版本，支援 "batch1" 或 "batch3"。
+            engine_version (str): 引擎版本，支援 "batch1"、"batch3" 或 "batch10"。
             engine_filename (str): TensorRT engine filename or absolute path，留空字串時依版本使用預設權重。
             replay_dirname (str): 儲存資料夾名稱 (目前保留欄位，便於和 TrackNet 對齊)
             cam_idx (int): 相機編號 (目前保留欄位，便於和 TrackNet 對齊)
