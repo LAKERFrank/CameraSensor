@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 import json
+from pathlib import Path
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -20,7 +21,7 @@ from ..UISettings import *
 from ..Services import SystemService
 from lib.message import *
 
-from lib.common import ICONDIR
+from lib.common import ICONDIR, ROOTDIR
 
 class StreamingDemoPage(QGroupBox):
     signal_tracknet_0 = pyqtSignal(bytes)
@@ -417,18 +418,17 @@ class StreamingDemoPage(QGroupBox):
         self.combo_pose_ver = QComboBox()
         self.combo_pose_ver.addItems(["OFF", "batch1", "batch3", "batch10"])
         self.combo_pose_ver.setCurrentText("OFF")
-        self.combo_pose_ver.currentTextChanged.connect(self.onPoseVerChanged)
+        self.combo_pose_ver.currentTextChanged.connect(self._load_pose_weights)
         pose_ver_layout.addWidget(label_pose_ver, stretch=1)
         pose_ver_layout.addWidget(self.combo_pose_ver, stretch=2)
 
         pose_weight_layout = QHBoxLayout()
         label_pose_weight = QLabel("Pose Weight:")
         self.combo_pose_weight = QComboBox()
-        self.combo_pose_weight.addItems(["default", "int8.engine", "int8_batch3.engine", "int8_batch10.engine"])
-        self.combo_pose_weight.setCurrentText("default")
         self.combo_pose_weight.setEnabled(False)
         pose_weight_layout.addWidget(label_pose_weight, stretch=1)
         pose_weight_layout.addWidget(self.combo_pose_weight, stretch=2)
+        self._load_pose_weights()
 
         self.btn_run = QPushButton()
         self.btn_run.setText('Run')
@@ -455,9 +455,25 @@ class StreamingDemoPage(QGroupBox):
 
         return container
 
-    def onPoseVerChanged(self, pose_ver:str):
-        pose_enabled = pose_ver != "OFF"
-        self.combo_pose_weight.setEnabled(pose_enabled)
-        if not pose_enabled:
-            self.combo_pose_weight.setCurrentText("default")
+    def _load_pose_weights(self):
+        version = self.combo_pose_ver.currentText()
+        if version == "OFF":
+            self.combo_pose_weight.clear()
+            self.combo_pose_weight.setEnabled(False)
             self.rpcCameraWidget.clearPosePoint()
+            return
+
+        base_dir = Path(ROOTDIR) / "LayerSensing" / "Pose" / "weights"
+        allowed_suffixes = {".engine"}
+        default_weight = "int8.engine"
+
+        weights = []
+        if base_dir.exists():
+            weights = [p.name for p in sorted(base_dir.iterdir()) if p.is_file() and p.suffix.lower() in allowed_suffixes]
+
+        if not weights and default_weight:
+            weights.append(default_weight)
+
+        self.combo_pose_weight.clear()
+        self.combo_pose_weight.addItems(weights)
+        self.combo_pose_weight.setEnabled(bool(weights))
