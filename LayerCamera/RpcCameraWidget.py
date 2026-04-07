@@ -71,6 +71,9 @@ class RpcCameraWidget(QWidget):
 
         self.kf:'list[tuple[float, float]]' = [(0.0, 0.0) for _ in range(self.num_cameras)]
         self.offsets = [0 for _ in range(self.num_cameras)]
+        self.visualize_tracknet = [[] for _ in range(self.num_cameras)]
+        self.visualize_pose_kpts = [[] for _ in range(self.num_cameras)]
+        self.visualize_pose_edges = [[] for _ in range(self.num_cameras)]
 
     def _calculateOffsets(self, i):
         ref_timestamp, ref_dt = self.kf[self.idx_list[0]]
@@ -180,6 +183,8 @@ class RpcCameraWidget(QWidget):
             self.camera_label_list[i].setFixedSize(self.image_size_h)
 
         self.visualize_tracknet = [[] for _ in range(num)]
+        self.visualize_pose_kpts = [[] for _ in range(num)]
+        self.visualize_pose_edges = [[] for _ in range(num)]
 
         asyncio.run(self._startCamera(num))
 
@@ -199,6 +204,22 @@ class RpcCameraWidget(QWidget):
             # Draw a point (small circle) at coordinates (x, y)
             for x, y in self.visualize_tracknet[cam_idx]:
                 context.arc(x, y, 5, 0, 2 * 3.14159)  # Circle with radius 5
+            context.fill()
+
+        # Draw pose skeleton lines (yellow)
+        if len(self.visualize_pose_edges[cam_idx]) > 0:
+            context.set_source_rgb(1.0, 1.0, 0.0)
+            context.set_line_width(2.0)
+            for (x1, y1), (x2, y2) in self.visualize_pose_edges[cam_idx]:
+                context.move_to(x1, y1)
+                context.line_to(x2, y2)
+            context.stroke()
+
+        # Draw pose keypoints (pink)
+        if len(self.visualize_pose_kpts[cam_idx]) > 0:
+            context.set_source_rgb(1.0, 0.41, 0.71)
+            for x, y in self.visualize_pose_kpts[cam_idx]:
+                context.arc(x, y, 2, 0, 2 * 3.14159)
             context.fill()
 
     def __createDisplayPipeline(self, idx):
@@ -251,18 +272,55 @@ class RpcCameraWidget(QWidget):
 
         PREVIEW_WIDTH, PREVIEW_HEIGHT = 320, 240
 
-        # rescale
-        coords = [(int(x/width*PREVIEW_WIDTH), int(y/height*PREVIEW_HEIGHT)) for x, y in coords]
+        coords = self._transformPreviewCoords(cam_idx, coords, width, height, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+
+        self.visualize_tracknet[cam_idx] = coords
+
+    def _transformPreviewCoords(self, cam_idx:int, coords:'list[(int, int)]', width:int, height:int, preview_width:int, preview_height:int):
+        transformed = [(int(x/width*preview_width), int(y/height*preview_height)) for x, y in coords]
 
         # rotation
         if self.cameraList[cam_idx].direction == 1:
-            coords = [(PREVIEW_WIDTH-y, x) for x, y in coords]
+            transformed = [(preview_width-y, x) for x, y in transformed]
         elif self.cameraList[cam_idx].direction == 2:
-            coords = [(PREVIEW_WIDTH-x, PREVIEW_HEIGHT-y) for x, y in coords]
+            transformed = [(preview_width-x, preview_height-y) for x, y in transformed]
         elif self.cameraList[cam_idx].direction == 3:
-            coords = [(y, PREVIEW_HEIGHT-x) for x, y in coords]
+            transformed = [(y, preview_height-x) for x, y in transformed]
 
-        self.visualize_tracknet[cam_idx] = coords
+        return transformed
+
+    def clearPosePoint(self):
+        for idx in range(len(self.visualize_pose_kpts)):
+            self.visualize_pose_kpts[idx] = []
+            self.visualize_pose_edges[idx] = []
+
+    def updatePosePoint(self, cam_idx:int, coords:'list[(int, int)]'=[]):
+        width, height = self.cameraList[cam_idx].resolution
+        PREVIEW_WIDTH, PREVIEW_HEIGHT = 320, 240
+
+        valid_points = [pt for pt in coords if pt[0] > 0 and pt[1] > 0]
+        transformed = self._transformPreviewCoords(cam_idx, valid_points, width, height, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+        self.visualize_pose_kpts[cam_idx] = transformed
+
+        coco_edges = [
+            (5, 7), (7, 9),
+            (6, 8), (8, 10),
+            (5, 6),
+            (5, 11), (6, 12), (11, 12),
+            (11, 13), (13, 15),
+            (12, 14), (14, 16)
+        ]
+
+        transformed_all = self._transformPreviewCoords(cam_idx, coords, width, height, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+        edges = []
+        for a, b in coco_edges:
+            if a >= len(coords) or b >= len(coords):
+                continue
+            if coords[a][0] <= 0 or coords[a][1] <= 0 or coords[b][0] <= 0 or coords[b][1] <= 0:
+                continue
+            edges.append((transformed_all[a], transformed_all[b]))
+
+        self.visualize_pose_edges[cam_idx] = edges
 
     def __startDisplay(self):
         if self.is_preview_playing:

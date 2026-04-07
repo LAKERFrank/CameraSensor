@@ -30,6 +30,10 @@ class StreamingDemoPage(QGroupBox):
     signal_content_point = pyqtSignal(bytes)
     signal_content_event = pyqtSignal(bytes)
     signal_content_segment = pyqtSignal(bytes)
+    signal_pose_0 = pyqtSignal(bytes)
+    signal_pose_1 = pyqtSignal(bytes)
+    signal_pose_2 = pyqtSignal(bytes)
+    signal_pose_3 = pyqtSignal(bytes)
 
     def __init__(self, rpcStreamingBadminton:RpcStreamingBadminton, rpcCameraWidget:RpcCameraWidget):
         super().__init__()
@@ -47,6 +51,10 @@ class StreamingDemoPage(QGroupBox):
         self.signal_content_point.connect(self.content_callback_point)
         self.signal_content_event.connect(self.content_callback_event)
         self.signal_content_segment.connect(self.content_callback_segment)
+        self.signal_pose_0.connect(self.pose_callback_0)
+        self.signal_pose_1.connect(self.pose_callback_1)
+        self.signal_pose_2.connect(self.pose_callback_2)
+        self.signal_pose_3.connect(self.pose_callback_3)
 
     def hideEvent(self, event):
         logging.debug(f"{self.__class__.__name__}: hided.")
@@ -59,6 +67,10 @@ class StreamingDemoPage(QGroupBox):
         self.rpcStreamingBadminton.content_callback_point = None
         self.rpcStreamingBadminton.content_callback_event = None
         self.rpcStreamingBadminton.content_callback_segment = None
+        self.rpcStreamingBadminton.pose_callbacks[0] = None
+        self.rpcStreamingBadminton.pose_callbacks[1] = None
+        self.rpcStreamingBadminton.pose_callbacks[2] = None
+        self.rpcStreamingBadminton.pose_callbacks[3] = None
 
     def deleteUI(self):
         self.rpcCameraWidget.show()
@@ -75,6 +87,10 @@ class StreamingDemoPage(QGroupBox):
         self.rpcStreamingBadminton.content_callback_point = lambda x: self.signal_content_point.emit(x)
         self.rpcStreamingBadminton.content_callback_event = lambda x: self.signal_content_event.emit(x)
         self.rpcStreamingBadminton.content_callback_segment = lambda x: self.signal_content_segment.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[0] = lambda x: self.signal_pose_0.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[1] = lambda x: self.signal_pose_1.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[2] = lambda x: self.signal_pose_2.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[3] = lambda x: self.signal_pose_3.emit(x)
 
         logging.debug(f"{self.__class__.__name__}: shown.")
 
@@ -110,6 +126,7 @@ class StreamingDemoPage(QGroupBox):
 
         self.trajectory_widget.reset()
         self.ball_point_widget.reset()
+        self.rpcCameraWidget.clearPosePoint()
 
     def startTest(self):
         self._clearOutput()
@@ -138,14 +155,17 @@ class StreamingDemoPage(QGroupBox):
             content_mode = self.combo_mode.currentText()
             record_mode = self.combo_record_mode.currentText()
             tracknet_ver = self.combo_tracknet_ver.currentText()
+            pose_ver = self.combo_pose_ver.currentText()
+            pose_weight = self.combo_pose_weight.currentText()
 
-            self.rpcStreamingBadminton.start(content_mode=content_mode, tracknet_ver=tracknet_ver, record_mode=record_mode)
+            self.rpcStreamingBadminton.start(content_mode=content_mode, tracknet_ver=tracknet_ver, record_mode=record_mode, pose_ver=pose_ver, pose_weight=pose_weight)
             self.btn_run.setText(f"Stop")
         else:
             self.rpcStreamingBadminton.stop()
             self.btn_run.setText("Run")
             self.trajectory_widget.render()
             self.ball_point_widget.reset()
+            self.rpcCameraWidget.clearPosePoint()
         self.is_recording = not self.is_recording
 
     def sensing_callback_0(self, data:bytes):
@@ -188,6 +208,39 @@ class StreamingDemoPage(QGroupBox):
         points = [ (int(p['pos']['x']), int(p['pos']['y'])) for p in jdata['linear'] ]
 
         self.rpcCameraWidget.updateTrackNetPoint(3, points)
+
+    def _pose_callback(self, cam_idx:int, data:bytes):
+        try:
+            jdata = json.loads(data)
+            kpts = jdata.get('kpts', [])
+            if len(kpts) == 0:
+                self.rpcCameraWidget.updatePosePoint(cam_idx, [])
+                return
+
+            width, height = self.rpcCameraWidget.cameraList[cam_idx].resolution
+            points = []
+            for kp in kpts:
+                if len(kp) < 2:
+                    points.append((0, 0))
+                    continue
+                x = int(kp[0] * width)
+                y = int(kp[1] * height)
+                points.append((x, y))
+            self.rpcCameraWidget.updatePosePoint(cam_idx, points)
+        except Exception as e:
+            logging.error(f"處理 Pose 資料時發生錯誤 (cam_{cam_idx}): {e}")
+
+    def pose_callback_0(self, data:bytes):
+        self._pose_callback(0, data)
+
+    def pose_callback_1(self, data:bytes):
+        self._pose_callback(1, data)
+
+    def pose_callback_2(self, data:bytes):
+        self._pose_callback(2, data)
+
+    def pose_callback_3(self, data:bytes):
+        self._pose_callback(3, data)
 
     def content_callback_point(self, data:str):
         """處理球點資料"""
@@ -359,6 +412,24 @@ class StreamingDemoPage(QGroupBox):
         tracknet_ver_layout.addWidget(label_tracknet_ver, stretch=1)
         tracknet_ver_layout.addWidget(self.combo_tracknet_ver, stretch=2)
 
+        pose_ver_layout = QHBoxLayout()
+        label_pose_ver = QLabel("Pose Ver.:")
+        self.combo_pose_ver = QComboBox()
+        self.combo_pose_ver.addItems(["OFF", "batch1", "batch3", "batch10"])
+        self.combo_pose_ver.setCurrentText("OFF")
+        self.combo_pose_ver.currentTextChanged.connect(self.onPoseVerChanged)
+        pose_ver_layout.addWidget(label_pose_ver, stretch=1)
+        pose_ver_layout.addWidget(self.combo_pose_ver, stretch=2)
+
+        pose_weight_layout = QHBoxLayout()
+        label_pose_weight = QLabel("Pose Weight:")
+        self.combo_pose_weight = QComboBox()
+        self.combo_pose_weight.addItems(["default", "int8.engine", "int8_batch3.engine", "int8_batch10.engine"])
+        self.combo_pose_weight.setCurrentText("default")
+        self.combo_pose_weight.setEnabled(False)
+        pose_weight_layout.addWidget(label_pose_weight, stretch=1)
+        pose_weight_layout.addWidget(self.combo_pose_weight, stretch=2)
+
         self.btn_run = QPushButton()
         self.btn_run.setText('Run')
         self.btn_run.setFixedSize(QSize(160, 60))
@@ -375,9 +446,18 @@ class StreamingDemoPage(QGroupBox):
         container_layout.addWidget(self.btn_home)
         container_layout.addLayout(mode_layout)
         container_layout.addLayout(tracknet_ver_layout)
+        container_layout.addLayout(pose_ver_layout)
+        container_layout.addLayout(pose_weight_layout)
         container_layout.addLayout(record_mode_layout)
         container_layout.addWidget(self.btn_run)
         container_layout.addWidget(self.btn_debug_run)
         container.setLayout(container_layout)
 
         return container
+
+    def onPoseVerChanged(self, pose_ver:str):
+        pose_enabled = pose_ver != "OFF"
+        self.combo_pose_weight.setEnabled(pose_enabled)
+        if not pose_enabled:
+            self.combo_pose_weight.setCurrentText("default")
+            self.rpcCameraWidget.clearPosePoint()
