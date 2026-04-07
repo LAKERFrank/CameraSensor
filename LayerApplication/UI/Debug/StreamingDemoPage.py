@@ -213,20 +213,32 @@ class StreamingDemoPage(QGroupBox):
     def _pose_callback(self, cam_idx:int, data:bytes):
         try:
             jdata = json.loads(data)
-            kpts = jdata.get('kpts', [])
-            if len(kpts) == 0:
+
+            detections = jdata.get('detection', [])
+            if len(detections) == 0:
                 self.rpcCameraWidget.updatePosePoint(cam_idx, [])
                 return
 
             width, height = self.rpcCameraWidget.cameraList[cam_idx].resolution
+            det = detections[0] if detections else {}
+            raw_kpts = det.get('kpts', [])
+
+            if len(raw_kpts) < 2:
+                self.rpcCameraWidget.updatePosePoint(cam_idx, [])
+                return
+
             points = []
-            for kp in kpts:
-                if len(kp) < 2:
-                    points.append((0, 0))
-                    continue
-                x = int(kp[0] * width)
-                y = int(kp[1] * height)
+            # kpts format: [x0, y0, x1, y1, ...]
+            for i in range(0, min(len(raw_kpts), 34), 2):
+                x_norm = raw_kpts[i]
+                y_norm = raw_kpts[i + 1] if i + 1 < len(raw_kpts) else 0.0
+                x = int(float(x_norm) * width)
+                y = int(float(y_norm) * height)
                 points.append((x, y))
+
+            while len(points) < 17:
+                points.append((0, 0))
+
             self.rpcCameraWidget.updatePosePoint(cam_idx, points)
         except Exception as e:
             logging.error(f"處理 Pose 資料時發生錯誤 (cam_{cam_idx}): {e}")
