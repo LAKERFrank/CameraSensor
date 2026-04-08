@@ -1,6 +1,9 @@
 import os
+import time
+from types import SimpleNamespace
 
 from LayerSensing.Pose.PoseMqtt import PoseMqtt
+from LayerSensing.FrameDistributor import CONSUMER_POSE, SharedFrameState
 from lib.common import ROOTDIR
 
 
@@ -51,9 +54,27 @@ class PoseManager:
         try:
             if self.poseThread is None:
                 raise Exception('No pose is running')
+
+            # stop enqueueing normal pose frames first
             self.distributor.activate_pose(False)
             self.poseThread.stop()
-            self.poseThread.join()
+
+            # wake blocked pose queue pop() by pushing an EOS sentinel (TrackNet force-stop style)
+            eos_frame = SimpleNamespace(
+                image=None,
+                index=-1,
+                monotonic_timestamp=time.monotonic(),
+                timestamp=time.time(),
+                is_eos=True
+            )
+            try:
+                self.distributor.pose_queue.push_state(SharedFrameState(frame=eos_frame, need_mask=CONSUMER_POSE))
+            except Exception:
+                pass
+
+            self.poseThread.join(timeout=3)
+            if self.poseThread.is_alive():
+                return {'status': 'failure', 'message': 'pose thread stop timeout'}
             self.poseThread = None
             return {'status': 'stopped'}
         except Exception as e:
