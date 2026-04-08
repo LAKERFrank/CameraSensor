@@ -301,6 +301,12 @@ class RpcCameraWidget(QWidget):
         if normalized_kpts is None:
             normalized_kpts = []
 
+        if not hasattr(self, "cameraList") or cam_idx >= len(self.cameraList) or self.cameraList[cam_idx] is None:
+            if not hasattr(self, "visualize_pose") or cam_idx >= len(self.visualize_pose):
+                return
+            self.visualize_pose[cam_idx] = []
+            return
+
         width, height = self.cameraList[cam_idx].resolution
         PREVIEW_WIDTH, PREVIEW_HEIGHT = 320, 240
 
