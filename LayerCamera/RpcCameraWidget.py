@@ -39,6 +39,12 @@ from lib.common import loadConfig
 from lib.common import ROOTDIR
 from LayerApplication.utils.CameraExplorer import CameraExplorer
 
+POSE_SKELETON_EDGES = [
+    (5, 7), (7, 9), (6, 8), (8, 10),
+    (5, 6), (5, 11), (6, 12), (11, 12),
+    (11, 13), (13, 15), (12, 14), (14, 16)
+]
+
 class RpcCameraWidget(QWidget):
 
     fpsUpdateSignal = pyqtSignal(int, bytes)
@@ -180,6 +186,7 @@ class RpcCameraWidget(QWidget):
             self.camera_label_list[i].setFixedSize(self.image_size_h)
 
         self.visualize_tracknet = [[] for _ in range(num)]
+        self.visualize_pose = [[] for _ in range(num)]
 
         asyncio.run(self._startCamera(num))
 
@@ -199,6 +206,32 @@ class RpcCameraWidget(QWidget):
             # Draw a point (small circle) at coordinates (x, y)
             for x, y in self.visualize_tracknet[cam_idx]:
                 context.arc(x, y, 5, 0, 2 * 3.14159)  # Circle with radius 5
+            context.fill()
+
+        pose_points = self.visualize_pose[cam_idx]
+        if len(pose_points) > 0:
+            # yellow lines
+            context.set_source_rgb(1.0, 1.0, 0.0)
+            context.set_line_width(1.5)
+            for p1_idx, p2_idx in POSE_SKELETON_EDGES:
+                if p1_idx >= len(pose_points) or p2_idx >= len(pose_points):
+                    continue
+                x1, y1 = pose_points[p1_idx]
+                x2, y2 = pose_points[p2_idx]
+                if x1 <= 0 and y1 <= 0:
+                    continue
+                if x2 <= 0 and y2 <= 0:
+                    continue
+                context.move_to(x1, y1)
+                context.line_to(x2, y2)
+            context.stroke()
+
+            # small pink points
+            context.set_source_rgb(1.0, 0.4, 0.8)
+            for x, y in pose_points:
+                if x <= 0 and y <= 0:
+                    continue
+                context.arc(x, y, 2, 0, 2 * 3.14159)
             context.fill()
 
     def __createDisplayPipeline(self, idx):
@@ -263,6 +296,37 @@ class RpcCameraWidget(QWidget):
             coords = [(y, PREVIEW_HEIGHT-x) for x, y in coords]
 
         self.visualize_tracknet[cam_idx] = coords
+
+    def updatePoseSkeleton(self, cam_idx:int, normalized_kpts:'list[list[float]]'=None):
+        if normalized_kpts is None:
+            normalized_kpts = []
+
+        width, height = self.cameraList[cam_idx].resolution
+        PREVIEW_WIDTH, PREVIEW_HEIGHT = 320, 240
+
+        coords = []
+        for pt in normalized_kpts[:17]:
+            if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                coords.append((0, 0))
+                continue
+            x = int(float(pt[0]) * width)
+            y = int(float(pt[1]) * height)
+            x = int(x / width * PREVIEW_WIDTH) if width else 0
+            y = int(y / height * PREVIEW_HEIGHT) if height else 0
+            coords.append((x, y))
+
+        while len(coords) < 17:
+            coords.append((0, 0))
+
+        # rotation
+        if self.cameraList[cam_idx].direction == 1:
+            coords = [(PREVIEW_WIDTH-y, x) for x, y in coords]
+        elif self.cameraList[cam_idx].direction == 2:
+            coords = [(PREVIEW_WIDTH-x, PREVIEW_HEIGHT-y) for x, y in coords]
+        elif self.cameraList[cam_idx].direction == 3:
+            coords = [(y, PREVIEW_HEIGHT-x) for x, y in coords]
+
+        self.visualize_pose[cam_idx] = coords
 
     def __startDisplay(self):
         if self.is_preview_playing:
