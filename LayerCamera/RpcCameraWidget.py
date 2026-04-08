@@ -297,12 +297,16 @@ class RpcCameraWidget(QWidget):
 
         self.visualize_tracknet[cam_idx] = coords
 
-    def updatePoseSkeleton(self, cam_idx:int, normalized_kpts:'list[list[float]]'=None):
+    def updatePoseSkeleton(self, cam_idx:int, normalized_kpts=None):
         if normalized_kpts is None:
             normalized_kpts = []
 
         width, height = self.cameraList[cam_idx].resolution
         PREVIEW_WIDTH, PREVIEW_HEIGHT = 320, 240
+
+        # payload v2: [x1, y1, x2, y2, ...]
+        if len(normalized_kpts) >= 34 and isinstance(normalized_kpts[0], (int, float)):
+            normalized_kpts = [[normalized_kpts[i], normalized_kpts[i + 1]] for i in range(0, min(len(normalized_kpts), 34), 2)]
 
         coords = []
         for pt in normalized_kpts[:17]:

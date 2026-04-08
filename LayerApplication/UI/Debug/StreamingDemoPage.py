@@ -269,7 +269,12 @@ class StreamingDemoPage(QGroupBox):
     def _update_pose_overlay(self, cam_idx:int, data:bytes):
         try:
             jdata = json.loads(data)
-            kpts = jdata.get("kpts", [])
+            detections = jdata.get("detection", [])
+            if detections and isinstance(detections, list):
+                kpts = detections[0].get("kpts", [])
+            else:
+                # backward-compatible payload fallback
+                kpts = jdata.get("kpts", [])
             self.rpcCameraWidget.updatePoseSkeleton(cam_idx, kpts)
         except Exception as e:
             logging.error(f"Pose callback error (cam={cam_idx}): {e}")
