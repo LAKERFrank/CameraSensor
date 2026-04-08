@@ -71,4 +71,4 @@ class RpcSensing(RemoteProcedureCall):
         Returns:
             dict: 狀態
         """
-        return self._call_rpc_sync("Pose/stop", timeout=1000)
+        return self._call_rpc_sync("Pose/stop", timeout=3)

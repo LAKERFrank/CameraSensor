@@ -277,8 +277,11 @@ class RpcStreamingBadminton:
             ret = sensingAgent.stopTrackNet()
             logging.info(f"TrackNet_{idx}: {str(ret)}")
             if self.pose_enabled_running:
-                pose_ret = sensingAgent.stopPose()
-                logging.info(f"Pose_{idx}: {str(pose_ret)}")
+                try:
+                    pose_ret = sensingAgent.stopPose()
+                    logging.info(f"Pose_{idx}: {str(pose_ret)}")
+                except Exception as e:
+                    logging.warning(f"Pose_{idx} stop skipped/timeout: {str(e)}")
         self.pose_enabled_running = False
 
         # ====== Stop content ======
