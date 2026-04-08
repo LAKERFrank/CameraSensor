@@ -52,7 +52,7 @@ class TrackNetThread:
     def __init__(self, device:str, model:TrackNet10, mqttc:mqtt.Client,
                  data_handler, blacklist,
                  output_width:int, output_height:int,
-                 csv_writer:CSVWriter):
+                 csv_writer:CSVWriter, vis_dir: str = None):
 
         self.images = []
         self.fids = []
@@ -64,6 +64,7 @@ class TrackNetThread:
         self.output_width = output_width
         self.output_height = output_height
         self.csv_writer = csv_writer
+        self.vis_dir = vis_dir
         self.mqttc = mqttc
         self.data_handler = data_handler
         # wait for new image
@@ -120,9 +121,25 @@ class TrackNetThread:
             if self.csv_writer is not None:
                 self.csv_writer.writePoints(point)
 
+            self._save_visualization(image, fid, point)
+
         if self.mqttc is not None:
             self.points = removeOutliers(self.points)
             self._publishPoints()
+
+    def _save_visualization(self, image, fid, point: Point):
+        if self.vis_dir is None or fid is None:
+            return
+
+        vis = image.copy()
+        if vis.ndim == 2:
+            vis = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+
+        if point.visibility:
+            cv2.circle(vis, (int(point.x), int(point.y)), 4, (0, 255, 0), -1)
+
+        os.makedirs(self.vis_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(self.vis_dir, f"{fid}.png"), vis)
 
     def _publishPoints(self):
         payload = {"linear": [p.toJson() for p in self.points]}
@@ -148,7 +165,7 @@ class TrackNetMqtt(threading.Thread):
     def __init__(self, nodename, mqttc:mqtt.Client, data_handler,
                  camera_origin_width:int, camera_origin_height:int,
                  path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+                 imgbuf: ImageBuffer, save_csv=True, vis_dir: str = None):
         """_summary_
 
         Args:
@@ -183,6 +200,7 @@ class TrackNetMqtt(threading.Thread):
         else:
             self.csv_writer = None
 
+        self.vis_dir = vis_dir
         self._stopper = threading.Event()
 
     def stop(self):
@@ -216,7 +234,8 @@ class TrackNetMqtt(threading.Thread):
                                         blacklist=[],
                                         output_width=self.camera_origin_width,
                                         output_height=self.camera_origin_height,
-                                        csv_writer=self.csv_writer)
+                                        csv_writer=self.csv_writer,
+                                        vis_dir=self.vis_dir)
 
         while not self._stopped():
 

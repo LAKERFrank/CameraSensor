@@ -25,7 +25,7 @@ class TrackNet1000Mqtt(threading.Thread):
     def __init__(self, nodename, mqttc:mqtt.Client, data_handler,
                  camera_origin_width:int, camera_origin_height:int,
                  path: str, weights_filename: str,
-                 imgbuf: ImageBuffer, save_csv=True):
+                 imgbuf: ImageBuffer, save_csv=True, vis_dir: str = None):
         """
         初始化 TrackNet1000 MQTT 推論執行緒。
 
@@ -51,6 +51,7 @@ class TrackNet1000Mqtt(threading.Thread):
         self.device = device
 
         self.nodename = nodename
+        self.vis_dir = vis_dir or path
         model_path = f"{ROOTDIR}/LayerSensing/TrackNet/TrackNet1000/weights/{weights_filename}.pt"
 
         # wait for new image
@@ -69,7 +70,8 @@ class TrackNet1000Mqtt(threading.Thread):
             mqttc=mqttc,
             data_handler=data_handler,
             overrides=overrides,
-            path=path,
+            path=self.vis_dir,
+            save_pred_images=True,
         )
 
     def run(self):

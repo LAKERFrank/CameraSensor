@@ -18,8 +18,12 @@ class PoseManager:
             if not os.path.isabs(engine_path):
                 engine_path = f'{ROOTDIR}/LayerSensing/Pose/weights/{engine_filename}'
 
+            replay_path = f'{ROOTDIR}/replay/{replay_dirname}' if replay_dirname else f'{ROOTDIR}/replay'
+            pose_vis_dir = f'{replay_path}/pose'
+            os.makedirs(pose_vis_dir, exist_ok=True)
+
             self.distributor.activate_pose(True)
-            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path)
+            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path, pose_vis_dir)
             self.poseThread.start()
             return {'status': 'ready'}
         except Exception as e:

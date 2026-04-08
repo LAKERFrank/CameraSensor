@@ -10,11 +10,12 @@ from LayerSensing.Datafeeder import Datafeeder
 from lib.common import ROOTDIR
 
 class TrackNetManager:
-    def __init__(self, device_name, data_handler, mqttc:mqtt.Client, imgbuf):
+    def __init__(self, device_name, data_handler, mqttc:mqtt.Client, frame_distributor=None, imgbuf=None):
 
         self.deviceName = device_name
         self.data_handler = data_handler        
         self.mqttc = mqttc
+        self.frameDistributor = frame_distributor
         self.imageBuffer = imgbuf
         self.tracknetThread = None
 
@@ -40,32 +41,34 @@ class TrackNetManager:
             if self.tracknetThread is not None:
                 raise Exception("There is another Tracknet thread is running.")
 
-            if hasattr(self.imageBuffer, 'activate_tracknet'):
-                self.imageBuffer.activate_tracknet(True)
+            if self.frameDistributor is not None:
+                self.frameDistributor.activate_tracknet(True)
 
             # tracknet_topic = f"/DATA/{self.deviceName}/SensingLayer/TrackNet"
 
-            replay_path = f"{ROOTDIR}/replay/{replay_dirname}"
+            replay_path = f"{ROOTDIR}/replay/{replay_dirname}" if replay_dirname else f"{ROOTDIR}/replay"
+            tracknet_vis_path = os.path.join(replay_path, 'tracknet')
 
             os.makedirs(replay_path, exist_ok=True)
+            os.makedirs(tracknet_vis_path, exist_ok=True)
 
             if tracknet_ver == "tracknet_v2":
                 self.tracknetThread \
                     = TrackNetMqtt(f"TrackNet_{cam_idx}", self.mqttc, self.data_handler, camera_origin_size[0],
                                    camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                                   self.imageBuffer, True, tracknet_vis_path)
             elif tracknet_ver == "tracknet_1000":
                 self.tracknetThread \
                     = TrackNet1000Mqtt(f"TrackNet_{cam_idx}", self.mqttc, self.data_handler, camera_origin_size[0],
                                    camera_origin_size[1], replay_path, weights_filename,
-                                   self.imageBuffer, True)
+                                   self.imageBuffer, True, tracknet_vis_path)
             else:
                 raise Exception(f"tracknet_ver={tracknet_ver} is not acceptable.")
             self.tracknetThread.start()
             return {"status": "ready"}
         except Exception as e:
-            if hasattr(self.imageBuffer, 'activate_tracknet'):
-                self.imageBuffer.activate_tracknet(False)
+            if self.frameDistributor is not None:
+                self.frameDistributor.activate_tracknet(False)
             return {"status": "failure", "message": str(e)}
 
     def stopTrackNet(self, wait_for_eos=True):
@@ -80,8 +83,8 @@ class TrackNetManager:
                 self.imageBuffer.push(frame)
             self.tracknetThread.join()
             self.tracknetThread = None
-            if hasattr(self.imageBuffer, 'activate_tracknet'):
-                self.imageBuffer.activate_tracknet(False)
+            if self.frameDistributor is not None:
+                self.frameDistributor.activate_tracknet(False)
             return {"status": "stopped " + ("(EOS reached)" if wait_for_eos else "(Force stop)")}
         except Exception as e:
             return {"status": "failure", "message": str(e)}
