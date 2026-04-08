@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 import json
+from pathlib import Path
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -20,7 +21,7 @@ from ..UISettings import *
 from ..Services import SystemService
 from lib.message import *
 
-from lib.common import ICONDIR
+from lib.common import ICONDIR, ROOTDIR
 
 class StreamingDemoPage(QGroupBox):
     signal_tracknet_0 = pyqtSignal(bytes)
@@ -111,6 +112,29 @@ class StreamingDemoPage(QGroupBox):
         self.trajectory_widget.reset()
         self.ball_point_widget.reset()
 
+    def _load_tracknet_weights(self):
+        version = self.combo_tracknet_ver.currentText()
+        base_dir = Path(ROOTDIR) / "LayerSensing" / "TrackNet"
+        if version == "tracknet_1000":
+            base_dir = base_dir / "Tracknet1000" / "weights"
+            allowed_suffixes = {".pt", ".pth"}
+            default_weight = "best.pt"
+        else:
+            base_dir = base_dir / "TrackNet10" / "weights"
+            allowed_suffixes = {".tar", ".pt", ".pth"}
+            default_weight = "no114_30.tar"
+
+        weights = []
+        if base_dir.exists():
+            weights = [p.name for p in sorted(base_dir.iterdir()) if p.is_file() and p.suffix.lower() in allowed_suffixes]
+
+        if not weights and default_weight:
+            weights.append(default_weight)
+
+        self.combo_tracknet_weight.clear()
+        self.combo_tracknet_weight.addItems(weights)
+        self.combo_tracknet_weight.setEnabled(bool(weights))
+
     def startTest(self):
         self._clearOutput()
         self.ball_point_widget.reset()
@@ -138,8 +162,9 @@ class StreamingDemoPage(QGroupBox):
             content_mode = self.combo_mode.currentText()
             record_mode = self.combo_record_mode.currentText()
             tracknet_ver = self.combo_tracknet_ver.currentText()
+            tracknet_weight = self.combo_tracknet_weight.currentText().strip() if self.combo_tracknet_weight.count() else ""
 
-            self.rpcStreamingBadminton.start(content_mode=content_mode, tracknet_ver=tracknet_ver, record_mode=record_mode)
+            self.rpcStreamingBadminton.start(content_mode=content_mode, tracknet_ver=tracknet_ver, record_mode=record_mode, tracknet_weight=tracknet_weight)
             self.btn_run.setText(f"Stop")
         else:
             self.rpcStreamingBadminton.stop()
@@ -356,8 +381,15 @@ class StreamingDemoPage(QGroupBox):
         self.combo_tracknet_ver = QComboBox()
         self.combo_tracknet_ver.addItems(["tracknet_v2", "tracknet_1000"])
         self.combo_tracknet_ver.setCurrentText("tracknet_v2")
+        self.combo_tracknet_ver.currentTextChanged.connect(self._load_tracknet_weights)
         tracknet_ver_layout.addWidget(label_tracknet_ver, stretch=1)
         tracknet_ver_layout.addWidget(self.combo_tracknet_ver, stretch=2)
+
+        tracknet_weight_layout = QHBoxLayout()
+        label_tracknet_weight = QLabel("TrackNet Weight:")
+        self.combo_tracknet_weight = QComboBox()
+        tracknet_weight_layout.addWidget(label_tracknet_weight, stretch=1)
+        tracknet_weight_layout.addWidget(self.combo_tracknet_weight, stretch=2)
 
         self.btn_run = QPushButton()
         self.btn_run.setText('Run')
@@ -375,9 +407,12 @@ class StreamingDemoPage(QGroupBox):
         container_layout.addWidget(self.btn_home)
         container_layout.addLayout(mode_layout)
         container_layout.addLayout(tracknet_ver_layout)
+        container_layout.addLayout(tracknet_weight_layout)
         container_layout.addLayout(record_mode_layout)
         container_layout.addWidget(self.btn_run)
         container_layout.addWidget(self.btn_debug_run)
         container.setLayout(container_layout)
+
+        self._load_tracknet_weights()
 
         return container
