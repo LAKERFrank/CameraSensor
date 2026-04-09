@@ -12,13 +12,22 @@ class PoseDetection:
     bbox_conf: float
     keypoints: list
 
-
 class TensorRTPoseEngine:
-    def __init__(self, engine_path: str, input_size=(640, 640), conf_thres: float = 0.25, kpt_thres: float = 0.1):
+    def __init__(
+        self,
+        engine_path: str,
+        input_size=(640, 640),
+        conf_thres: float = 0.6,
+        kpt_thres: float = 0.1,
+        iou_thres: float = 0.45,
+        max_det: int = 2,
+    ):
         self.engine_path = engine_path
         self.input_size = input_size
         self.conf_thres = conf_thres
         self.kpt_thres = kpt_thres
+        self.iou_thres = iou_thres
+        self.max_det = max_det
         self.runtime = None
         self.engine = None
         self.context = None
@@ -69,7 +78,7 @@ class TensorRTPoseEngine:
     def infer(self, image: np.ndarray) -> List[PoseDetection]:
         batch_result = self.infer_batch([image])
         return batch_result[0] if batch_result else []
-
+    
     def infer_batch(self, images: List[np.ndarray]) -> List[List[PoseDetection]]:
         if not self._load_ok:
             return [[] for _ in images]
@@ -210,11 +219,9 @@ class TensorRTPoseEngine:
         if raw.ndim == 1:
             raw = raw.reshape(1, -1)
 
-        # common layout from YOLO-based TRT export: [C, N]
         if raw.ndim == 2 and raw.shape[0] in (56, 57) and raw.shape[1] > raw.shape[0]:
             raw = raw.T
 
-        # convert 56-col format [cx,cy,w,h,conf,kpts(51)] to existing 57-col parser format
         if raw.ndim == 2 and raw.shape[1] == 56:
             zeros = np.zeros((raw.shape[0], 1), dtype=raw.dtype)
             raw = np.concatenate([raw[:, :5], zeros, raw[:, 5:]], axis=1)
@@ -257,6 +264,55 @@ class TensorRTPoseEngine:
 
         return np.expand_dims(tensor, 0), ratio, (dw, dh)
 
+    def _xywh_to_xyxy(self, bbox_xywh):
+        cx, cy, w, h = bbox_xywh
+        x1 = cx - w / 2.0
+        y1 = cy - h / 2.0
+        x2 = cx + w / 2.0
+        y2 = cy + h / 2.0
+        return [x1, y1, x2, y2]
+
+    def _bbox_iou_xyxy(self, box1, box2) -> float:
+        x1 = max(box1[0], box2[0])
+        y1 = max(box1[1], box2[1])
+        x2 = min(box1[2], box2[2])
+        y2 = min(box1[3], box2[3])
+
+        inter_w = max(0.0, x2 - x1)
+        inter_h = max(0.0, y2 - y1)
+        inter = inter_w * inter_h
+
+        area1 = max(0.0, box1[2] - box1[0]) * max(0.0, box1[3] - box1[1])
+        area2 = max(0.0, box2[2] - box2[0]) * max(0.0, box2[3] - box2[1])
+        union = area1 + area2 - inter
+
+        if union <= 0.0:
+            return 0.0
+        return inter / union
+
+    def _nms(self, detections: List[PoseDetection]) -> List[PoseDetection]:
+        if not detections:
+            return []
+
+        detections = sorted(detections, key=lambda d: d.bbox_conf, reverse=True)
+        kept = []
+
+        while detections and len(kept) < self.max_det:
+            best = detections.pop(0)
+            kept.append(best)
+            best_xyxy = self._xywh_to_xyxy(best.bbox_xywh)
+
+            remain = []
+            for det in detections:
+                det_xyxy = self._xywh_to_xyxy(det.bbox_xywh)
+                iou = self._bbox_iou_xyxy(best_xyxy, det_xyxy)
+                if iou < self.iou_thres:
+                    remain.append(det)
+
+            detections = remain
+
+        return kept
+
     def _postprocess(self, raw, orig_shape, ratio, pad):
         oh, ow = orig_shape
         detections = []
@@ -264,11 +320,13 @@ class TensorRTPoseEngine:
             conf = float(row[4])
             if conf < self.conf_thres:
                 continue
+
             cx, cy, w, h = row[:4]
             cx = (cx - pad[0]) / ratio
             cy = (cy - pad[1]) / ratio
             w = w / ratio
             h = h / ratio
+
             keypoints = []
             kpt = row[6:].reshape(-1, 3)[:17]
             for x, y, kconf in kpt:
@@ -277,11 +335,21 @@ class TensorRTPoseEngine:
                 if kconf < self.kpt_thres:
                     keypoints.append([0.0, 0.0, 0.0])
                 else:
-                    keypoints.append([float(np.clip(x, 0, ow - 1)), float(np.clip(y, 0, oh - 1)), float(kconf)])
+                    keypoints.append([
+                        float(np.clip(x, 0, ow - 1)),
+                        float(np.clip(y, 0, oh - 1)),
+                        float(kconf)
+                    ])
+
             detections.append(PoseDetection(
-                bbox_xywh=[float(np.clip(cx, 0, ow - 1)), float(np.clip(cy, 0, oh - 1)), float(max(w, 0.0)), float(max(h, 0.0))],
+                bbox_xywh=[
+                    float(np.clip(cx, 0, ow - 1)),
+                    float(np.clip(cy, 0, oh - 1)),
+                    float(max(w, 0.0)),
+                    float(max(h, 0.0))
+                ],
                 bbox_conf=conf,
                 keypoints=keypoints,
             ))
-        detections.sort(key=lambda d: d.bbox_conf, reverse=True)
-        return detections
+
+        return self._nms(detections)
