@@ -38,41 +38,42 @@ class PoseMqtt(threading.Thread):
         return self._stopper.is_set()
 
     def run(self):
-        self._ensure_json_output()
-        if not self.engine.load():
-            logging.error('%s failed to load pose engine, pipeline stopped.', self.nodename)
-            return
-        logging.info('%s pipeline started', self.nodename)
         pending_frames = []
-        while not self._stopped():
-            frame = self.frame_queue.pop(True)
-            try:
-                if frame.is_eos:
-                    if pending_frames:
+        try:
+            self._ensure_json_output()
+            if not self.engine.load():
+                logging.error('%s failed to load pose engine, pipeline stopped.', self.nodename)
+                return
+            logging.info('%s pipeline started', self.nodename)
+            while not self._stopped():
+                frame = self.frame_queue.pop(True)
+                try:
+                    if frame.is_eos:
+                        if pending_frames:
+                            self._process_batch(pending_frames)
+                            pending_frames = []
+                        payload = {'frame_id': frame.index, 'timestamp': frame.monotonic_timestamp, 'detection': [], 'EOF': True}
+                        self.data_handler.publish('pose', json.dumps(payload))
+                        self._append_pose_json(payload)
+                        logging.info('%s EOF reached', self.nodename)
+                        break
+
+                    if self.batch_size == 1:
+                        self._process_batch([frame])
+                        continue
+
+                    pending_frames.append(frame)
+                    if len(pending_frames) >= self.batch_size:
                         self._process_batch(pending_frames)
                         pending_frames = []
-                    payload = {'frame_id': frame.index, 'timestamp': frame.monotonic_timestamp, 'detection': [], 'EOF': True}
-                    self.data_handler.publish('pose', json.dumps(payload))
-                    self._append_pose_json(payload)
-                    logging.info('%s EOF reached', self.nodename)
-                    break
-
-                if self.batch_size == 1:
-                    self._process_batch([frame])
-                    continue
-
-                pending_frames.append(frame)
-                if len(pending_frames) >= self.batch_size:
-                    self._process_batch(pending_frames)
-                    pending_frames = []
-            except Exception as e:
-                logging.error('%s infer/publish failed: %s', self.nodename, e)
-                frame.release()
-                
-        for pending in pending_frames:
-            pending.release()
-
-        logging.info('%s pipeline stopped', self.nodename)
+                except Exception as e:
+                    logging.error('%s infer/publish failed: %s', self.nodename, e)
+                    frame.release()
+        finally:
+            for pending in pending_frames:
+                pending.release()
+            self.engine.unload()
+            logging.info('%s pipeline stopped', self.nodename)
 
     def _process_batch(self, frames):
         try:

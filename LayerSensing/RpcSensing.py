@@ -65,10 +65,13 @@ class RpcSensing(RemoteProcedureCall):
                                    replay_dirname=replay_dirname,
                                    cam_idx=cam_idx)
 
-    def stopPose(self):
+    def stopPose(self, wait_for_eos=False):
         """Stop Pose thread
+
+        Args:
+            wait_for_eos (bool): True 時等待資料流自然結束，False 時主動塞入 EOS 強制停止。
 
         Returns:
             dict: 狀態
         """
-        return self._call_rpc_sync("Pose/stop", timeout=1000)
+        return self._call_rpc_sync("Pose/stop", wait_for_eos=wait_for_eos, timeout=1000)

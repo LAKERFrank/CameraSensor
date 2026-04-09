@@ -36,6 +36,7 @@ class TensorRTPoseEngine:
         self._load_ok = False
         self.trt = None
         self.cuda = None
+        self.cuda_context = None
         self.input_name = None
         self.output_names = []
 
@@ -43,9 +44,15 @@ class TensorRTPoseEngine:
         try:
             import tensorrt as trt
             import pycuda.driver as cuda
-            import pycuda.autoinit  # noqa: F401
         except Exception as e:
             logging.error('TensorRT dependencies not available: %s', e)
+            return False
+
+        try:
+            cuda.init()
+            self.cuda_context = cuda.Device(0).make_context()
+        except Exception as e:
+            logging.error('Failed to initialize CUDA context: %s', e)
             return False
 
         logger = trt.Logger(trt.Logger.WARNING)
@@ -54,11 +61,13 @@ class TensorRTPoseEngine:
             engine = runtime.deserialize_cuda_engine(f.read())
         if engine is None:
             logging.error('Failed to deserialize pose engine: %s', self.engine_path)
+            self.unload()
             return False
 
         context = engine.create_execution_context()
         if context is None:
             logging.error('Failed to create execution context for pose engine')
+            self.unload()
             return False
 
         self.runtime = runtime
@@ -70,10 +79,27 @@ class TensorRTPoseEngine:
         self.input_name, self.output_names = self._discover_io_names()
         if self.input_name is None or len(self.output_names) == 0:
             logging.error('Failed to discover TensorRT Pose I/O tensors')
+            self.unload()
             return False
         self._load_ok = True
         logging.info('Pose engine loaded: %s', self.engine_path)
         return True
+
+    def unload(self):
+        self._load_ok = False
+        self.stream = None
+        self.context = None
+        self.engine = None
+        self.runtime = None
+
+        if self.cuda_context is not None:
+            try:
+                self.cuda_context.pop()
+                self.cuda_context.detach()
+            except Exception as e:
+                logging.warning('Pose CUDA context cleanup warning: %s', e)
+            finally:
+                self.cuda_context = None
 
     def infer(self, image: np.ndarray) -> List[PoseDetection]:
         batch_result = self.infer_batch([image])
@@ -84,6 +110,7 @@ class TensorRTPoseEngine:
             return [[] for _ in images]
         if len(images) == 0:
             return []
+        original_batch = len(images)
 
         input_tensors = []
         preprocess_infos = []
@@ -93,14 +120,14 @@ class TensorRTPoseEngine:
             preprocess_infos.append((image.shape[:2], ratio, pad))
 
         input_tensor = np.stack(input_tensors, axis=0)
-        raw = self._execute_trt(input_tensor)
-        batch_raw = self._split_batch_raw(raw, expected_batch=len(images))
+        raw, executed_batch = self._execute_trt(input_tensor)
+        batch_raw = self._split_batch_raw(raw, expected_batch=executed_batch)
 
         outputs = []
         for idx, (orig_shape, ratio, pad) in enumerate(preprocess_infos):
             per_raw = batch_raw[idx] if idx < len(batch_raw) else np.empty((0, 57), dtype=np.float32)
             outputs.append(self._postprocess(per_raw, orig_shape, ratio, pad))
-        return outputs
+        return outputs[:original_batch]
 
     def _discover_io_names(self):
         input_name = None
@@ -124,8 +151,29 @@ class TensorRTPoseEngine:
 
         return input_name, output_names
 
-    def _execute_trt(self, input_tensor: np.ndarray) -> np.ndarray:
+    def _execute_trt(self, input_tensor: np.ndarray):
         assert self.context is not None and self.engine is not None
+
+        execute_batch = input_tensor.shape[0]
+        if hasattr(self.engine, 'get_tensor_shape'):
+            engine_input_shape = tuple(self.engine.get_tensor_shape(self.input_name))
+        else:
+            binding_idx = self.engine.get_binding_index(self.input_name)
+            engine_input_shape = tuple(self.engine.get_binding_shape(binding_idx))
+
+        if len(engine_input_shape) > 0 and engine_input_shape[0] > 0 and engine_input_shape[0] != execute_batch:
+            required_batch = int(engine_input_shape[0])
+            if required_batch > execute_batch:
+                pad_count = required_batch - execute_batch
+                pad_src = input_tensor[-1:] if execute_batch > 0 else np.zeros((1,) + tuple(input_tensor.shape[1:]), dtype=input_tensor.dtype)
+                pad_tensor = np.repeat(pad_src, pad_count, axis=0)
+                input_tensor = np.concatenate([input_tensor, pad_tensor], axis=0)
+                execute_batch = required_batch
+                logging.debug('Pose TRT static batch=%s, padded input batch from %s to %s', required_batch, required_batch - pad_count, required_batch)
+            else:
+                input_tensor = input_tensor[:required_batch]
+                execute_batch = required_batch
+                logging.warning('Pose TRT required batch=%s smaller than provided batch, truncating input', required_batch)
 
         if hasattr(self.context, 'set_input_shape'):
             self.context.set_input_shape(self.input_name, tuple(input_tensor.shape))
@@ -155,8 +203,8 @@ class TensorRTPoseEngine:
 
         output_arrays = [item['host'].reshape(item['shape']) for item in io if not item['is_input']]
         if len(output_arrays) == 0:
-            return np.empty((0, 57), dtype=np.float32)
-        return np.asarray(output_arrays[0], dtype=np.float32)
+            return np.empty((0, 57), dtype=np.float32), execute_batch
+        return np.asarray(output_arrays[0], dtype=np.float32), execute_batch
 
     def _split_batch_raw(self, raw: np.ndarray, expected_batch: int) -> List[np.ndarray]:
         raw = np.asarray(raw)
