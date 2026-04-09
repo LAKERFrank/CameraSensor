@@ -1,5 +1,8 @@
 import os
+import queue
 
+from LayerCamera.CameraSystemC.recorder_module import Frame
+from LayerSensing.FrameDistributor import CONSUMER_POSE, SharedFrameState
 from LayerSensing.Pose.PoseMqtt import PoseMqtt
 from lib.common import ROOTDIR
 
@@ -38,23 +41,36 @@ class PoseManager:
             replay_path = f'{ROOTDIR}/replay/{replay_dirname}' if replay_dirname else f'{ROOTDIR}/replay'
             pose_vis_dir = f'{replay_path}/pose'
             os.makedirs(pose_vis_dir, exist_ok=True)
+            pose_json_path = f'{pose_vis_dir}/Pose_{cam_idx}.jsonl'
 
             self.distributor.activate_pose(True)
             batch_size = {'batch1': 1, 'batch3': 3, 'batch10': 10}[version]
-            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, engine_path, pose_vis_dir, batch_size=batch_size)
+            self.poseThread = PoseMqtt('Pose', self.data_handler, self.distributor.pose_queue, batch_size=batch_size, engine_path=engine_path, output_json=pose_json_path)
             self.poseThread.start()
             return {'status': 'ready'}
         except Exception as e:
             return {'status': 'failure', 'message': str(e)}
 
-    def stopPose(self):
+    def stopPose(self, wait_for_eos=False):
         try:
             if self.poseThread is None:
                 raise Exception('No pose is running')
-            self.distributor.activate_pose(False)
-            self.poseThread.stop()
+
+            if not wait_for_eos:
+                frame = Frame()
+                frame.is_eos = True
+                eos_state = SharedFrameState(frame=frame, need_mask=CONSUMER_POSE)
+                try:
+                    self.distributor.pose_queue.push_state(eos_state)
+                except queue.Full:
+                    dropped = self.distributor.pose_queue.pop_nowait_state()
+                    self.distributor.release(dropped, CONSUMER_POSE)
+                    self.distributor.pose_drop_count += 1
+                    self.distributor.pose_queue.push_state(eos_state)
+
             self.poseThread.join()
             self.poseThread = None
-            return {'status': 'stopped'}
+            self.distributor.activate_pose(False)
+            return {'status': 'stopped ' + ('(EOS reached)' if wait_for_eos else '(Force stop)')}
         except Exception as e:
             return {'status': 'failure', 'message': str(e)}
