@@ -180,6 +180,8 @@ class RpcCameraWidget(QWidget):
             self.camera_label_list[i].setFixedSize(self.image_size_h)
 
         self.visualize_tracknet = [[] for _ in range(num)]
+        self.visualize_pose = [[] for _ in range(num)]
+        self.pose_overlay_enabled = False
 
         asyncio.run(self._startCamera(num))
 
@@ -200,6 +202,35 @@ class RpcCameraWidget(QWidget):
             for x, y in self.visualize_tracknet[cam_idx]:
                 context.arc(x, y, 5, 0, 2 * 3.14159)  # Circle with radius 5
             context.fill()
+
+        if self.pose_overlay_enabled and cam_idx < len(self.visualize_pose):
+            poses = self.visualize_pose[cam_idx]
+            for person in poses:
+                points = person.get("points", [])
+                if not points:
+                    continue
+
+                # yellow lines
+                context.set_source_rgb(1.0, 1.0, 0.0)
+                context.set_line_width(2.0)
+                for p1, p2 in self._pose_edges():
+                    if p1 >= len(points) or p2 >= len(points):
+                        continue
+                    x1, y1 = points[p1]
+                    x2, y2 = points[p2]
+                    if not self._is_valid_pose_point((x1, y1)) or not self._is_valid_pose_point((x2, y2)):
+                        continue
+                    context.move_to(x1, y1)
+                    context.line_to(x2, y2)
+                    context.stroke()
+
+                # pink keypoints
+                context.set_source_rgb(1.0, 0.55, 0.75)
+                for x, y in points:
+                    if not self._is_valid_pose_point((x, y)):
+                        continue
+                    context.arc(x, y, 2, 0, 2 * 3.14159)
+                    context.fill()
 
     def __createDisplayPipeline(self, idx):
 
@@ -251,18 +282,64 @@ class RpcCameraWidget(QWidget):
 
         PREVIEW_WIDTH, PREVIEW_HEIGHT = 320, 240
 
-        # rescale
-        coords = [(int(x/width*PREVIEW_WIDTH), int(y/height*PREVIEW_HEIGHT)) for x, y in coords]
-
-        # rotation
-        if self.cameraList[cam_idx].direction == 1:
-            coords = [(PREVIEW_WIDTH-y, x) for x, y in coords]
-        elif self.cameraList[cam_idx].direction == 2:
-            coords = [(PREVIEW_WIDTH-x, PREVIEW_HEIGHT-y) for x, y in coords]
-        elif self.cameraList[cam_idx].direction == 3:
-            coords = [(y, PREVIEW_HEIGHT-x) for x, y in coords]
+        coords = self._transform_preview_coords(cam_idx, coords, width, height, PREVIEW_WIDTH, PREVIEW_HEIGHT)
 
         self.visualize_tracknet[cam_idx] = coords
+
+    def _is_valid_pose_point(self, pt):
+        x, y = pt
+        return x > 0 and y > 0
+
+    def _pose_edges(self):
+        return [
+            (0, 1), (0, 2), (1, 3), (2, 4),
+            (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),
+            (5, 11), (6, 12), (11, 12),
+            (11, 13), (13, 15), (12, 14), (14, 16),
+        ]
+
+    def _transform_preview_coords(self, cam_idx:int, coords:'list[(int, int)]', width:int, height:int, preview_width:int, preview_height:int):
+        if width <= 0 or height <= 0:
+            return []
+
+        scaled = [(int(x / width * preview_width), int(y / height * preview_height)) for x, y in coords]
+
+        direction = self.cameraList[cam_idx].direction
+        if direction == 1:
+            return [(preview_width - y, x) for x, y in scaled]
+        if direction == 2:
+            return [(preview_width - x, preview_height - y) for x, y in scaled]
+        if direction == 3:
+            return [(y, preview_height - x) for x, y in scaled]
+
+        return scaled
+
+    def updatePoseData(self, cam_idx:int, detections:list):
+        if cam_idx >= len(self.cameraList) or self.cameraList[cam_idx] is None:
+            return
+
+        width, height = self.cameraList[cam_idx].resolution
+        preview_width, preview_height = 320, 240
+
+        pose_people = []
+        for det in detections[:2]:
+            kpts = det.get("kpts", []) if isinstance(det, dict) else []
+            if not isinstance(kpts, list) or len(kpts) < 34:
+                continue
+
+            raw_points = []
+            for i in range(0, 34, 2):
+                raw_points.append((float(kpts[i]) * width, float(kpts[i + 1]) * height))
+
+            transformed = self._transform_preview_coords(cam_idx, raw_points, width, height, preview_width, preview_height)
+            pose_people.append({"points": transformed})
+
+        self.visualize_pose[cam_idx] = pose_people
+
+    def enablePoseOverlay(self, enabled:bool):
+        self.pose_overlay_enabled = enabled
+        if not enabled:
+            self.visualize_pose = [[] for _ in range(self.num_cameras)]
 
     def __startDisplay(self):
         if self.is_preview_playing:

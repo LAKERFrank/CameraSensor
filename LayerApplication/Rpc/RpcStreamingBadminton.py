@@ -15,9 +15,11 @@ class RpcStreamingBadminton:
         self.mqttc:mqtt.Client = manager.mqttc
 
         self.sensing_topics = {}
+        self.pose_topics = {}
 
         for idx, agent in self.manager.sensingLayerAgents.items():
             self.sensing_topics[idx] = f'/DATA/{agent.device_name}/SensingLayer/TrackNet'
+            self.pose_topics[idx] = f'/DATA/{agent.device_name}/SensingLayer/Pose'
 
         self.content_topic_point = ""
         self.content_topic_event = ""
@@ -29,6 +31,7 @@ class RpcStreamingBadminton:
             self.content_topic_segment = f'/DATA/{self.manager.contentLayerAgent.device_name}/ContentLayer/Model3D/Segment'
 
         self.sensing_callbacks = {}
+        self.pose_callbacks = {}
         self.content_callback_point = None
         self.content_callback_event = None
         self.content_callback_segment = None
@@ -53,6 +56,11 @@ class RpcStreamingBadminton:
             if (callback := self.sensing_callbacks.get(idx, None)) is not None:
                 self.mqttc.subscribe(topic)
                 self.mqttc.message_callback_add(topic, self._func_wrapper(callback))
+        # setup pose callback
+        for idx, topic in self.pose_topics.items():
+            if (callback := self.pose_callbacks.get(idx, None)) is not None:
+                self.mqttc.subscribe(topic)
+                self.mqttc.message_callback_add(topic, self._func_wrapper(callback))
         # setup content callback
         if self.content_topic_point:
             if (callback := self.content_callback_point) is not None:
@@ -69,6 +77,9 @@ class RpcStreamingBadminton:
 
     def _setupUnsubscribe(self):
         for _, topic in self.sensing_topics.items():
+            self.mqttc.unsubscribe(topic)
+            self.mqttc.message_callback_remove(topic)
+        for _, topic in self.pose_topics.items():
             self.mqttc.unsubscribe(topic)
             self.mqttc.message_callback_remove(topic)
         if self.content_topic_point:
@@ -166,7 +177,7 @@ class RpcStreamingBadminton:
 
         self._setupUnsubscribe()
 
-    def start(self, content_mode="CES", tracknet_ver="tracknet_v2", record_mode="h264_high", tracknet_weight=None):
+    def start(self, content_mode="CES", tracknet_ver="tracknet_v2", record_mode="h264_high", tracknet_weight=None, pose_ver="OFF", pose_weight=None):
         """Start
 
         Args:
@@ -174,6 +185,8 @@ class RpcStreamingBadminton:
             tracknet_ver (str, optional): Tracknet 版本. Available options: ["tracknet_v2", "tracknet_1000"].
             record_mode (str, optional): Camera 錄影模式. Available options: ["none", "h264_low", "h264_high"].
             tracknet_weight (str | None, optional): Tracknet 權重檔名。若未提供則使用預設值。
+            pose_ver (str, optional): Pose 版本，"OFF" 表示關閉 Pose.
+            pose_weight (str | None, optional): Pose 權重檔名。若未提供則使用預設值。
         """
 
         self._verifyRequirements()
@@ -201,6 +214,9 @@ class RpcStreamingBadminton:
 
         camera_image_res = (512, 288)
         weight_name = (tracknet_weight or "").strip()
+        pose_ver_name = (pose_ver or "").strip()
+        pose_enabled = pose_ver_name.upper() != "OFF"
+        pose_weight_name = (pose_weight or "").strip()
 
         if tracknet_ver == "tracknet_1000":
             camera_image_res = (640, 480)
@@ -209,9 +225,7 @@ class RpcStreamingBadminton:
             for cam_idx, sensingAgent in list(self.manager.sensingLayerAgents.items()):
                 cameraAgent = self.manager.cameraLayerAgents[cam_idx]
                 ret = sensingAgent.startTrackNet(cameraAgent.resolution, "tracknet_1000", weight_in_use, replay_dirname, cam_idx)
-                pose_ret = sensingAgent.startPose(cameraAgent.resolution, "best_int8_cu12.engine", replay_dirname=replay_dirname, cam_idx=cam_idx)
                 logging.info(f"TrackNet_{cam_idx}: {str(ret)}")
-                logging.info(f"Pose_{cam_idx}: {str(pose_ret)}")
         else:
             # tracknet_v2
             camera_image_res = (512, 288)
@@ -220,6 +234,13 @@ class RpcStreamingBadminton:
                 cameraAgent = self.manager.cameraLayerAgents[cam_idx]
                 ret = sensingAgent.startTrackNet(cameraAgent.resolution, "tracknet_v2", weight_in_use, replay_dirname, cam_idx)
                 logging.info(f"TrackNet_{cam_idx}: {str(ret)}")
+
+        if pose_enabled:
+            pose_weight_in_use = pose_weight_name or "best_int8_cu12.engine"
+            for cam_idx, sensingAgent in list(self.manager.sensingLayerAgents.items()):
+                cameraAgent = self.manager.cameraLayerAgents[cam_idx]
+                pose_ret = sensingAgent.startPose(cameraAgent.resolution, pose_weight_in_use, replay_dirname=replay_dirname, cam_idx=cam_idx)
+                logging.info(f"Pose_{cam_idx}: {str(pose_ret)}")
 
         # ====== Setup camera ======
 
@@ -254,6 +275,8 @@ class RpcStreamingBadminton:
         for idx, sensingAgent in list(self.manager.sensingLayerAgents.items()):
             ret = sensingAgent.stopTrackNet()
             logging.info(f"TrackNet_{idx}: {str(ret)}")
+            pose_ret = sensingAgent.stopPose(wait_for_eos=False)
+            logging.info(f"Pose_{idx}: {str(pose_ret)}")
 
         # ====== Stop content ======
         ret = self.manager.contentLayerAgent.stopModel3D()

@@ -28,6 +28,10 @@ class StreamingDemoPage(QGroupBox):
     signal_tracknet_1 = pyqtSignal(bytes)
     signal_tracknet_2 = pyqtSignal(bytes)
     signal_tracknet_3 = pyqtSignal(bytes)
+    signal_pose_0 = pyqtSignal(bytes)
+    signal_pose_1 = pyqtSignal(bytes)
+    signal_pose_2 = pyqtSignal(bytes)
+    signal_pose_3 = pyqtSignal(bytes)
     signal_content_point = pyqtSignal(bytes)
     signal_content_event = pyqtSignal(bytes)
     signal_content_segment = pyqtSignal(bytes)
@@ -45,6 +49,10 @@ class StreamingDemoPage(QGroupBox):
         self.signal_tracknet_1.connect(self.sensing_callback_1)
         self.signal_tracknet_2.connect(self.sensing_callback_2)
         self.signal_tracknet_3.connect(self.sensing_callback_3)
+        self.signal_pose_0.connect(self.pose_callback_0)
+        self.signal_pose_1.connect(self.pose_callback_1)
+        self.signal_pose_2.connect(self.pose_callback_2)
+        self.signal_pose_3.connect(self.pose_callback_3)
         self.signal_content_point.connect(self.content_callback_point)
         self.signal_content_event.connect(self.content_callback_event)
         self.signal_content_segment.connect(self.content_callback_segment)
@@ -57,6 +65,10 @@ class StreamingDemoPage(QGroupBox):
         self.rpcStreamingBadminton.sensing_callbacks[1] = None
         self.rpcStreamingBadminton.sensing_callbacks[2] = None
         self.rpcStreamingBadminton.sensing_callbacks[3] = None
+        self.rpcStreamingBadminton.pose_callbacks[0] = None
+        self.rpcStreamingBadminton.pose_callbacks[1] = None
+        self.rpcStreamingBadminton.pose_callbacks[2] = None
+        self.rpcStreamingBadminton.pose_callbacks[3] = None
         self.rpcStreamingBadminton.content_callback_point = None
         self.rpcStreamingBadminton.content_callback_event = None
         self.rpcStreamingBadminton.content_callback_segment = None
@@ -73,6 +85,10 @@ class StreamingDemoPage(QGroupBox):
         self.rpcStreamingBadminton.sensing_callbacks[1] = lambda x: self.signal_tracknet_1.emit(x)
         self.rpcStreamingBadminton.sensing_callbacks[2] = lambda x: self.signal_tracknet_2.emit(x)
         self.rpcStreamingBadminton.sensing_callbacks[3] = lambda x: self.signal_tracknet_3.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[0] = lambda x: self.signal_pose_0.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[1] = lambda x: self.signal_pose_1.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[2] = lambda x: self.signal_pose_2.emit(x)
+        self.rpcStreamingBadminton.pose_callbacks[3] = lambda x: self.signal_pose_3.emit(x)
         self.rpcStreamingBadminton.content_callback_point = lambda x: self.signal_content_point.emit(x)
         self.rpcStreamingBadminton.content_callback_event = lambda x: self.signal_content_event.emit(x)
         self.rpcStreamingBadminton.content_callback_segment = lambda x: self.signal_content_segment.emit(x)
@@ -135,6 +151,28 @@ class StreamingDemoPage(QGroupBox):
         self.combo_tracknet_weight.addItems(weights)
         self.combo_tracknet_weight.setEnabled(bool(weights))
 
+    def _load_pose_weights(self):
+        version = self.combo_pose_ver.currentText()
+        self.combo_pose_weight.clear()
+
+        if version == "OFF":
+            self.combo_pose_weight.setEnabled(False)
+            return
+
+        base_dir = Path(ROOTDIR) / "LayerSensing" / "Pose" / "weights"
+        allowed_suffixes = {".engine", ".pt", ".pth", ".onnx"}
+        default_weight = "best_int8_cu12.engine"
+        weights = []
+
+        if base_dir.exists():
+            weights = [p.name for p in sorted(base_dir.iterdir()) if p.is_file() and p.suffix.lower() in allowed_suffixes]
+
+        if not weights:
+            weights.append(default_weight)
+
+        self.combo_pose_weight.addItems(weights)
+        self.combo_pose_weight.setEnabled(True)
+
     def startTest(self):
         self._clearOutput()
         self.ball_point_widget.reset()
@@ -163,10 +201,21 @@ class StreamingDemoPage(QGroupBox):
             record_mode = self.combo_record_mode.currentText()
             tracknet_ver = self.combo_tracknet_ver.currentText()
             tracknet_weight = self.combo_tracknet_weight.currentText().strip() if self.combo_tracknet_weight.count() else ""
+            pose_ver = self.combo_pose_ver.currentText()
+            pose_weight = self.combo_pose_weight.currentText().strip() if self.combo_pose_weight.isEnabled() and self.combo_pose_weight.count() else ""
 
-            self.rpcStreamingBadminton.start(content_mode=content_mode, tracknet_ver=tracknet_ver, record_mode=record_mode, tracknet_weight=tracknet_weight)
+            self.rpcCameraWidget.enablePoseOverlay(pose_ver != "OFF")
+            self.rpcStreamingBadminton.start(
+                content_mode=content_mode,
+                tracknet_ver=tracknet_ver,
+                record_mode=record_mode,
+                tracknet_weight=tracknet_weight,
+                pose_ver=pose_ver,
+                pose_weight=pose_weight,
+            )
             self.btn_run.setText(f"Stop")
         else:
+            self.rpcCameraWidget.enablePoseOverlay(False)
             self.rpcStreamingBadminton.stop()
             self.btn_run.setText("Run")
             self.trajectory_widget.render()
@@ -213,6 +262,27 @@ class StreamingDemoPage(QGroupBox):
         points = [ (int(p['pos']['x']), int(p['pos']['y'])) for p in jdata['linear'] ]
 
         self.rpcCameraWidget.updateTrackNetPoint(3, points)
+
+    def _pose_callback(self, cam_idx:int, data:bytes):
+        try:
+            jdata = json.loads(data)
+            detections = jdata.get("detection", [])
+            if isinstance(detections, list):
+                self.rpcCameraWidget.updatePoseData(cam_idx, detections)
+        except Exception as e:
+            logging.error(f"處理 Pose 資料時發生錯誤(cam={cam_idx}): {e}")
+
+    def pose_callback_0(self, data:bytes):
+        self._pose_callback(0, data)
+
+    def pose_callback_1(self, data:bytes):
+        self._pose_callback(1, data)
+
+    def pose_callback_2(self, data:bytes):
+        self._pose_callback(2, data)
+
+    def pose_callback_3(self, data:bytes):
+        self._pose_callback(3, data)
 
     def content_callback_point(self, data:str):
         """處理球點資料"""
@@ -391,6 +461,21 @@ class StreamingDemoPage(QGroupBox):
         tracknet_weight_layout.addWidget(label_tracknet_weight, stretch=1)
         tracknet_weight_layout.addWidget(self.combo_tracknet_weight, stretch=2)
 
+        pose_ver_layout = QHBoxLayout()
+        label_pose_ver = QLabel("Pose Ver.:")
+        self.combo_pose_ver = QComboBox()
+        self.combo_pose_ver.addItems(["OFF", "pose_trt"])
+        self.combo_pose_ver.setCurrentText("OFF")
+        self.combo_pose_ver.currentTextChanged.connect(self._load_pose_weights)
+        pose_ver_layout.addWidget(label_pose_ver, stretch=1)
+        pose_ver_layout.addWidget(self.combo_pose_ver, stretch=2)
+
+        pose_weight_layout = QHBoxLayout()
+        label_pose_weight = QLabel("Pose Weight:")
+        self.combo_pose_weight = QComboBox()
+        pose_weight_layout.addWidget(label_pose_weight, stretch=1)
+        pose_weight_layout.addWidget(self.combo_pose_weight, stretch=2)
+
         self.btn_run = QPushButton()
         self.btn_run.setText('Run')
         self.btn_run.setFixedSize(QSize(160, 60))
@@ -408,11 +493,14 @@ class StreamingDemoPage(QGroupBox):
         container_layout.addLayout(mode_layout)
         container_layout.addLayout(tracknet_ver_layout)
         container_layout.addLayout(tracknet_weight_layout)
+        container_layout.addLayout(pose_ver_layout)
+        container_layout.addLayout(pose_weight_layout)
         container_layout.addLayout(record_mode_layout)
         container_layout.addWidget(self.btn_run)
         container_layout.addWidget(self.btn_debug_run)
         container.setLayout(container_layout)
 
         self._load_tracknet_weights()
+        self._load_pose_weights()
 
         return container
