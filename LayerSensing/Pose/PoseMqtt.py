@@ -1,27 +1,35 @@
 import json
 import logging
-import os
 import threading
 import time
-
-import cv2
+import os
+import math
 
 from LayerSensing.Pose.PoseEngine import TensorRTPoseEngine
 
 
 class PoseMqtt(threading.Thread):
-    def __init__(self, nodename, data_handler, frame_queue, engine_path: str, vis_dir: str = None, batch_size: int = 1):
+    def __init__(self, nodename, data_handler, frame_queue, batch_size: int, engine_path: str, output_json: str):
         super().__init__(name=nodename)
         self.nodename = nodename
         self.data_handler = data_handler
         self.frame_queue = frame_queue
-        self.engine = TensorRTPoseEngine(engine_path=engine_path)
-        self.vis_dir = vis_dir
         self.batch_size = max(int(batch_size), 1)
+        self.engine = TensorRTPoseEngine(engine_path=engine_path)
+        self.output_json = output_json
         self._stopper = threading.Event()
         self._counter = 0
         self._lat_acc = 0.0
         self._window_start = time.time()
+
+    def _ensure_json_output(self):
+        os.makedirs(os.path.dirname(self.output_json), exist_ok=True)
+        if not os.path.exists(self.output_json):
+            open(self.output_json, 'w').close()
+
+    def _append_pose_json(self, payload):
+        with open(self.output_json, 'a') as jsonfile:
+            jsonfile.write(json.dumps(payload, ensure_ascii=False) + '\n')
 
     def stop(self):
         self._stopper.set()
@@ -30,6 +38,7 @@ class PoseMqtt(threading.Thread):
         return self._stopper.is_set()
 
     def run(self):
+        self._ensure_json_output()
         if not self.engine.load():
             logging.error('%s failed to load pose engine, pipeline stopped.', self.nodename)
             return
@@ -42,7 +51,9 @@ class PoseMqtt(threading.Thread):
                     if pending_frames:
                         self._process_batch(pending_frames)
                         pending_frames = []
-                    self.data_handler.publish('pose', json.dumps({'frame_id': frame.index, 'timestamp': frame.monotonic_timestamp, 'bbox': [], 'kpts': [], 'EOF': True}))
+                    payload = {'frame_id': frame.index, 'timestamp': frame.monotonic_timestamp, 'detection': [], 'EOF': True}
+                    self.data_handler.publish('pose', json.dumps(payload))
+                    self._append_pose_json(payload)
                     logging.info('%s EOF reached', self.nodename)
                     break
 
@@ -57,7 +68,7 @@ class PoseMqtt(threading.Thread):
             except Exception as e:
                 logging.error('%s infer/publish failed: %s', self.nodename, e)
                 frame.release()
-
+                
         for pending in pending_frames:
             pending.release()
 
@@ -74,75 +85,44 @@ class PoseMqtt(threading.Thread):
 
             for idx, frame in enumerate(frames):
                 detections = batch_detections[idx] if idx < len(batch_detections) else []
-                best_det = detections[0] if detections else None
-                payload = self._build_payload(frame, best_det)
+                payload = self._build_payload(frame, detections)
                 self.data_handler.publish('pose', json.dumps(payload))
-                self._save_visualization(frame, detections)
+                self._append_pose_json(payload)
         finally:
             for frame in frames:
                 frame.release()
 
-    def _build_payload(self, frame, detection):
+    def _build_payload(self, frame, detections):
         h, w = frame.image.shape[:2]
         payload = {
             'frame_id': frame.index,
             'timestamp': frame.monotonic_timestamp,
-            'bbox': [],
-            'kpts': [],
+            'detection': [],
         }
-        if detection is None:
-            return payload
 
-        cx, cy, bw, bh = detection.bbox_xywh
-        payload['bbox'] = [
-            float(min(max(cx / w, 0.0), 1.0)) if w else 0.0,
-            float(min(max(cy / h, 0.0), 1.0)) if h else 0.0,
-            float(min(max(bw / w, 0.0), 1.0)) if w else 0.0,
-            float(min(max(bh / h, 0.0), 1.0)) if h else 0.0,
-            float(detection.bbox_conf),
-        ]
-        payload['kpts'] = [
-            [
-                float(min(max(x / w, 0.0), 1.0)) if w else 0.0,
-                float(min(max(y / h, 0.0), 1.0)) if h else 0.0,
+        top_detections = (detections or [])[:2]
+        for det in top_detections:
+            cx, cy, bw, bh = det.bbox_xywh
+            bbox = [
+                round(float(min(max(cx / w, 0.0), 1.0)) if w else 0.0, 5),
+                round(float(min(max(cy / h, 0.0), 1.0)) if h else 0.0, 5),
+                round(float(min(max(bw / w, 0.0), 1.0)) if w else 0.0, 5),
+                round(float(min(max(bh / h, 0.0), 1.0)) if h else 0.0, 5),
+                round(float(det.bbox_conf), 3),
             ]
-            for x, y, _ in detection.keypoints[:17]
-        ]
-        while len(payload['kpts']) < 17:
-            payload['kpts'].append([0.0, 0.0])
+            kpts = []
+            for x, y, _ in det.keypoints[:17]:
+                kpts.append(round(float(min(max(x / w, 0.0), 1.0)) if w else 0.0, 5))
+                kpts.append(round(float(min(max(y / h, 0.0), 1.0)) if h else 0.0, 5))
+            while len(kpts) < 34:
+                kpts.extend([0.0, 0.0])
+
+            payload['detection'].append({
+                'bbox': bbox,
+                'kpts': kpts,
+            })
+
         return payload
-
-    def _save_visualization(self, frame, detections):
-        if not self.vis_dir:
-            return
-
-        image = frame.image
-        if image is None:
-            return
-
-        if image.ndim == 2:
-            vis = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-        elif image.ndim == 3 and image.shape[2] == 1:
-            vis = cv2.cvtColor(image[:, :, 0], cv2.COLOR_GRAY2BGR)
-        else:
-            vis = image.copy()
-
-        for det in detections:
-            cx, cy, w, h = det.bbox_xywh
-            x1 = int(max(cx - w / 2.0, 0))
-            y1 = int(max(cy - h / 2.0, 0))
-            x2 = int(min(cx + w / 2.0, vis.shape[1] - 1))
-            y2 = int(min(cy + h / 2.0, vis.shape[0] - 1))
-            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            for x, y, kconf in det.keypoints:
-                if kconf <= 0:
-                    continue
-                cv2.circle(vis, (int(x), int(y)), 2, (0, 255, 255), -1)
-
-        os.makedirs(self.vis_dir, exist_ok=True)
-        save_path = os.path.join(self.vis_dir, f'{frame.index}.png')
-        cv2.imwrite(save_path, vis)
 
     def _log_perf(self, latency_ms: float):
         now = time.time()
